@@ -328,6 +328,7 @@ class App {
             btnAddChapter: document.getElementById('btnAddChapter'),
             btnSaveToFile: document.getElementById('btnSaveToFile'),
             btnExport: document.getElementById('btnExport'),
+            btnRefresh: document.getElementById('btnRefresh'),
             btnShare: document.getElementById('btnShare'),
             wordCount: document.getElementById('wordCount'),
             charCount: document.getElementById('charCount'),
@@ -485,6 +486,15 @@ class App {
         this.els.btnSaveToFile.addEventListener('click', () => {
             if (this.data) {
                 this._saveToJsonFile();
+            }
+        });
+
+        // 刷新按钮 — 从 JSON 文件重新拉取最新内容
+        this.els.btnRefresh.addEventListener('click', () => {
+            if (this.data) {
+                this._refreshFromJson().catch(err => {
+                    console.error('[刷新] 发生错误:', err);
+                });
             }
         });
 
@@ -1055,6 +1065,100 @@ class App {
         ta.select();
         try { document.execCommand('copy'); } catch (e) { console.warn('复制失败', e); }
         document.body.removeChild(ta);
+    }
+
+    // ===================== 从 JSON 文件刷新 =====================
+
+    /**
+     * 通过服务器 API 从 data/chapters/*.json 重新拉取所有章节的最新内容
+     * 先保存当前编辑内容，再通过 /api/novel 获取磁盘上的最新数据
+     */
+    async _refreshFromJson() {
+        const btn = this.els.btnRefresh;
+        if (!btn) return;
+
+        const origText = btn.textContent;
+        btn.textContent = '⏳ 刷新中...';
+        btn.disabled = true;
+
+        try {
+            // 先保存当前正在编辑的内容
+            this._saveCurrentChapter();
+
+            // 尝试通过服务器 API 获取最新数据（优先）
+            let freshChapters = null;
+            try {
+                const resp = await fetch('/api/novel', { cache: 'no-store' });
+                if (resp.ok) {
+                    const serverData = await resp.json();
+                    if (serverData && serverData.chapters && serverData.chapters.length > 0) {
+                        freshChapters = serverData.chapters.map(sv => ({
+                            id: sv.id,
+                            title: sv.title || '',
+                            content: sv.content || ''
+                        }));
+                    }
+                }
+            } catch (apiErr) {
+                console.warn('[刷新] API 方式失败，降级到直接 fetch 章节文件:', apiErr);
+            }
+
+            // 降级方案：直接 fetch 每个章节的 JSON 文件
+            if (!freshChapters) {
+                const base = 'data/chapters/';
+                const results = await Promise.all(this.data.chapters.map(async (ch) => {
+                    try {
+                        const resp = await fetch(base + ch.id + '.json', { cache: 'no-store' });
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            return { id: ch.id, title: data.title || ch.title, content: data.content || '' };
+                        }
+                    } catch (e) {
+                        console.warn('[刷新] 拉取 ' + ch.id + ' 失败:', e);
+                    }
+                    return null;
+                }));
+                freshChapters = results.filter(Boolean);
+            }
+
+            if (!freshChapters || freshChapters.length === 0) {
+                throw new Error('无法获取章节数据');
+            }
+
+            // 对比新旧数据，统计变化
+            let changedCount = 0;
+            freshChapters.forEach((fresh) => {
+                const old = this.data.chapters.find(c => c.id === fresh.id);
+                if (old) {
+                    if (old.content !== fresh.content || old.title !== fresh.title) {
+                        changedCount++;
+                    }
+                    Object.assign(old, fresh);
+                }
+            });
+
+            // 如果有变化则更新 UI
+            if (changedCount > 0) {
+                this._saveData();
+                this._renderChapterList();
+                this._loadActiveChapter();
+                if (this.currentMode === 'preview') {
+                    this._renderPreview();
+                }
+                btn.textContent = '✅ 已刷新 ' + changedCount + ' 章';
+            } else {
+                btn.textContent = '✅ 已是最新';
+            }
+        } catch (e) {
+            console.error('[刷新] 刷新失败:', e);
+            btn.textContent = '❌ 刷新失败';
+        }
+
+        // 恢复按钮状态
+        setTimeout(() => {
+            btn.textContent = origText;
+            btn.disabled = false;
+        }, 2500);
     }
 
     // ===================== 工具方法 =====================

@@ -13,7 +13,7 @@ import socket
 import subprocess
 import sys
 import webbrowser
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -23,7 +23,7 @@ PORT = 8000
 
 
 def get_lan_ip():
-    """获取本机局域网 IP"""
+    """获取本机局域网 IP（优先选择到公网出口的那块网卡）"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -34,20 +34,50 @@ def get_lan_ip():
         return "127.0.0.1"
 
 
+def get_all_ipv4():
+    """枚举本机所有 IPv4 地址，用于提示用户手机可访问的候选 IP"""
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
+
 class NovelHandler(SimpleHTTPRequestHandler):
+    # 使用 HTTP/1.1 保持连接，但通过超时与守护线程确保服务器可被 Ctrl+C 立即停止
+    protocol_version = "HTTP/1.1"
+    timeout = 5  # socket 读写超时（秒），防止保持连接导致线程无法退出
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(BASE_DIR), **kwargs)
+
+    def setup(self):
+        super().setup()
+        # 给底层 socket 设置超时，避免 handle_one_request 永久阻塞
+        try:
+            self.connection.settimeout(self.timeout)
+        except Exception:
+            pass
 
     def log_message(self, format, *args):
         """精简日志输出"""
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), format % args))
 
     def handle_one_request(self):
-        """捕获连接重置/中止错误，避免刷屏"""
+        """捕获连接重置/中止/超时错误，避免刷屏并保证线程可退出"""
         try:
             super().handle_one_request()
+        except socket.timeout:
+            # keep-alive 空闲超时，结束本连接线程
+            self.close_connection = True
         except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
-            pass
+            # 连接被关闭或读写异常，关闭 keep-alive 让线程结束
+            self.close_connection = True
 
     def _send_json(self, obj, status=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -61,6 +91,10 @@ class NovelHandler(SimpleHTTPRequestHandler):
             pass
 
     def end_headers(self):
+        # 禁止缓存，确保每次请求都读取最新文件内容
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         # 允许跨域（方便调试）
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
@@ -145,52 +179,75 @@ class NovelHandler(SimpleHTTPRequestHandler):
         self._send_json({"error": "Not Found"}, status=404)
 
     def _load_novel(self):
-        """从章节文件 + novel.js 的数据重建小说对象"""
+        """从章节文件 + novel.js 的数据重建小说对象
+        - 优先从 data/chapters/<id>.json 读取每章的完整数据（title/summary/content）
+        - 使用 novel.js 中的 CHAPTER_MANIFEST 保证章节顺序
+        - 兜底直接扫描 data/chapters/ 目录
+        """
         chapters_dir = BASE_DIR / "data" / "chapters"
         novel_js_path = BASE_DIR / "data" / "novel.js"
 
-        # 优先从 novel.js 中提取章节清单
-        chapters = []
         book = {"title": "星落之城", "author": "未命名"}
+        chapters = []
 
+        # 从 novel.js 提取书籍元信息 + 章节顺序清单
+        manifest = None
         if novel_js_path.exists():
             js_content = novel_js_path.read_text("utf-8")
-            # 从 novel.js 提取 BOOK 和 CHAPTER_MANIFEST
             import re
             book_match = re.search(r"var BOOK=(\{.+?\});", js_content, re.DOTALL)
-            manifest_match = re.search(r"var CHAPTER_MANIFEST=\[(\{.+?\}.*?)\];", js_content, re.DOTALL)
-
             if book_match:
                 try:
                     book = json.loads(book_match.group(1))
                 except json.JSONDecodeError:
                     pass
 
+            manifest_match = re.search(
+                r"var CHAPTER_MANIFEST=\[(\{.+?\}.*?)\];",
+                js_content, re.DOTALL
+            )
             if manifest_match:
                 try:
                     manifest = json.loads("[" + manifest_match.group(1) + "]")
-                    for m in manifest:
-                        ch_file = chapters_dir / f"{m['id']}.json"
-                        content = ""
-                        if ch_file.exists():
-                            try:
-                                ch_data = json.loads(ch_file.read_text("utf-8"))
-                                content = ch_data.get("content", "")
-                            except Exception:
-                                pass
+                except json.JSONDecodeError:
+                    pass
+
+        if manifest:
+            # 按 manifest 顺序读取每章的最新数据
+            for m in manifest:
+                ch_file = chapters_dir / f"{m['id']}.json"
+                if ch_file.exists():
+                    try:
+                        ch_data = json.loads(ch_file.read_text("utf-8"))
+                        chapters.append({
+                            "id": ch_data.get("id", m["id"]),
+                            "title": ch_data.get("title", m["title"]),
+                            "summary": ch_data.get("summary", m.get("summary", "")),
+                            "content": ch_data.get("content", "")
+                        })
+                    except Exception:
+                        # 文件损坏时回退到 manifest 数据
                         chapters.append({
                             "id": m["id"],
                             "title": m["title"],
                             "summary": m.get("summary", ""),
-                            "content": content
+                            "content": ""
                         })
-                except json.JSONDecodeError:
-                    pass
+                else:
+                    # 章节文件不存在时使用 manifest 数据
+                    chapters.append({
+                        "id": m["id"],
+                        "title": m["title"],
+                        "summary": m.get("summary", ""),
+                        "content": ""
+                    })
 
         if not chapters:
-            # 兜底：直接从章节文件目录读取
+            # 兜底：直接从章节文件目录读取（按文件名自然排序）
             if chapters_dir.exists():
-                for f in sorted(chapters_dir.glob("ch_*.json")):
+                ch_files = sorted(chapters_dir.glob("ch_*.json"),
+                                  key=lambda p: int(p.stem.split("_")[-1]))
+                for f in ch_files:
                     try:
                         data = json.loads(f.read_text("utf-8"))
                         chapters.append(data)
@@ -279,11 +336,15 @@ def cleanup_port(port):
     try:
         if system == "Windows":
             # Windows：使用 netstat 查找占用端口的 PID
-            result = subprocess.run(
+            # netstat 输出纯 ASCII，但中文系统下默认 ANSI(GBK) 解码更安全；
+            # 这里读原始字节再按 GBK 解码并容错，避免极端情况下崩溃。
+            proc = subprocess.run(
                 ["netstat", "-ano"],
-                capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
-            for line in result.stdout.splitlines():
+            stdout = proc.stdout.decode("gbk", errors="replace") if proc.stdout else ""
+            for line in stdout.splitlines():
                 if f":{port} " in line and "LISTENING" in line:
                     parts = line.strip().split()
                     pid = parts[-1]
@@ -314,12 +375,76 @@ def cleanup_port(port):
         time.sleep(0.5)  # 等待进程完全退出
 
 
+def _run_cmd_gbk(argv):
+    """以 GBK 编码执行外部命令并返回 (returncode, stdout)。
+    中文 Windows 上 netsh / netstat 输出为 GBK，subprocess 默认按 ANSI 解码
+    极易因 UTF-8 字节序列崩溃；这里读原始字节后显式按 GBK 解码并容错。
+    """
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        out = proc.stdout.decode("gbk", errors="replace") if proc.stdout else ""
+        return proc.returncode, out
+    except Exception:
+        return -1, ""
+
+
+def ensure_firewall_rule():
+    """在 Windows 上自动尝试添加防火墙入站规则；失败则提示手动命令"""
+    import platform
+    if platform.system() != "Windows":
+        return
+
+    rule_name = "星落之城"
+    # 先检查规则是否已存在
+    rc, out = _run_cmd_gbk(
+        ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"]
+    )
+    rule_exists = (rc == 0) and (rule_name in out)
+
+    if rule_exists:
+        print(f"  防火墙: 规则 “{rule_name}” 已存在 (端口 {PORT} 已放行)")
+        return
+
+    # 尝试添加规则（需要管理员权限）
+    rc, _ = _run_cmd_gbk(
+        [
+            "netsh", "advfirewall", "firewall", "add", "rule",
+            f"name={rule_name}",
+            "dir=in", "action=allow", "protocol=TCP",
+            f"localport={PORT}"
+        ]
+    )
+    if rc == 0:
+        print(f"  防火墙: 已自动添加规则 “{rule_name}” 放行端口 {PORT}")
+        return
+
+    # 添加失败（多半是权限不足），给出手动命令
+    print("  提示: 若手机无法访问，多半是 Windows 防火墙拦截。")
+    print("        请以【管理员身份】打开 PowerShell，执行以下命令放行端口:")
+    print(f'        New-NetFirewallRule -DisplayName "{rule_name}" -Direction Inbound -Protocol TCP -LocalPort {PORT} -Action Allow')
+    print()
+    print("        另外请确认：手机与电脑连接同一 WiFi，且路由器未开启 AP/客户端隔离。")
+    print()
+
+
+class NovelServer(ThreadingHTTPServer):
+    """支持多线程 + 立即关闭的 HTTP 服务器"""
+    daemon_threads = True      # 请求线程设为守护线程，主线程退出时随之结束
+    block_on_close = False     # server_close 不等待请求线程，确保 Ctrl+C 立即生效
+    allow_reuse_address = True
+
+
 def main():
     # 启动前清理残留进程
     cleanup_port(PORT)
 
     lan_ip = get_lan_ip()
-    server = HTTPServer(("0.0.0.0", PORT), NovelHandler)
+    all_ips = get_all_ipv4()
+    server = NovelServer(("0.0.0.0", PORT), NovelHandler)
 
     print("=" * 50)
     print("  星落之城 - 本地服务器已启动")
@@ -332,20 +457,17 @@ def main():
     print(f"  局域网分享（同一 WiFi 下的设备）:")
     print(f"    阅读页: http://{lan_ip}:{PORT}/reader.html")
     print(f"    编辑器: http://{lan_ip}:{PORT}/index.html")
+    if len(all_ips) > 1:
+        print()
+        print("  本机其他网卡 IP（若上面 IP 手机不通，可尝试下面这些）:")
+        for ip in all_ips:
+            print(f"    http://{ip}:{PORT}/reader.html")
     print()
     print("  提示: 按 Ctrl+C 停止服务器")
     print("=" * 50)
     print()
 
-    # 注册信号处理，确保关闭时释放端口
-    def shutdown_handler(signum, frame):
-        print("\n正在关闭服务器...")
-        server.server_close()
-        print("服务器已停止")
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, shutdown_handler)
-    signal.signal(signal.SIGTERM, shutdown_handler)
+    ensure_firewall_rule()
 
     # 自动打开浏览器
     try:
@@ -353,10 +475,14 @@ def main():
     except Exception:
         pass
 
+    # 使用带超时的 serve_forever，让 KeyboardInterrupt 能被及时响应
     try:
-        server.serve_forever()
+        server.serve_forever(poll_interval=0.3)
     except KeyboardInterrupt:
         print("\n正在关闭服务器...")
+    finally:
+        # 立即关闭 listening socket，再等待极短时间让线程退出
+        server.shutdown()
         server.server_close()
         print("服务器已停止")
 

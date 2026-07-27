@@ -27,15 +27,20 @@ const fs = require('fs');
 const path = require('path');
 
 // ========== 配置 ==========
+const NOVEL_JSON = path.join(__dirname, '..', 'data', 'novel.json');
 const NOVEL_JS = path.join(__dirname, '..', 'data', 'novel.js');
 const CHAPTERS_DIR = path.join(__dirname, '..', 'data', 'chapters');
 
 // ========== 辅助函数 ==========
 
-/** 获取当前章节编号（从标题如 "第八章" 中提取） */
+/** 获取当前章节编号（从标题如 "第八章" 或 "第8章" 中提取） */
 function parseChapterNumber(title) {
-    const m = title.match(/^第(\d+)章/);
-    return m ? parseInt(m[1], 10) : null;
+    const cn = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10};
+    const m1 = title.match(/^第(\d+)章/);
+    if (m1) return parseInt(m1[1], 10);
+    const m2 = title.match(/^第([一二三四五六七八九十])章/);
+    if (m2) return cn[m2[1]];
+    return null;
 }
 
 /** 生成章节 ID：ch_1, ch_2, ... */
@@ -43,9 +48,16 @@ function makeChapterId(num) {
     return `ch_${num}`;
 }
 
+/** 阿拉伯数字转中文数字 */
+function toChineseNum(n) {
+    const cn = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
+    return cn[n] || String(n);
+}
+
 /** 生成章节标题：第X章 YYY */
 function makeChapterTitle(num, subtitle) {
-    return subtitle ? `第${num}章 ${subtitle}` : `第${num}章`;
+    const cn = toChineseNum(num);
+    return subtitle ? `第${cn}章 ${subtitle}` : `第${cn}章`;
 }
 
 /** 获取章节副标题（从 "第八章 心墙渐融" 中提取 "心墙渐融"） */
@@ -85,10 +97,14 @@ function main() {
         process.exit(1);
     }
 
-    // 从 chapters/ 目录读取所有章节并按 id 排序
+    // 从 chapters/ 目录读取所有章节并按 id 数值排序（ch_1, ch_2, ... ch_13）
     const chapterFiles = fs.readdirSync(CHAPTERS_DIR)
         .filter(f => f.endsWith('.json'))
-        .sort();
+        .sort((a, b) => {
+            const na = parseInt(a.match(/\d+/), 10);
+            const nb = parseInt(b.match(/\d+/), 10);
+            return na - nb;
+        });
 
     const chapters = chapterFiles.map(f => {
         const data = JSON.parse(fs.readFileSync(path.join(CHAPTERS_DIR, f), 'utf8'));
@@ -114,9 +130,11 @@ function main() {
     const newSubtitle = parseSubtitle(newTitle);
     const newId = makeChapterId(newNum);
 
-    // 检查新 ID 是否已存在
-    if (chapters.some(c => c.id === newId)) {
-        console.error(`❌ 章节 ID ${newId} 已存在，请检查`);
+    // 检查新 ID 是否与"不会被重编号的章节"冲突
+    // （后续章节会被重编号，所以只有插入位置之前的章节才算冲突）
+    const chaptersBeforeInsert = chapters.slice(0, insertIdx + 1);
+    if (chaptersBeforeInsert.some(c => c.id === newId)) {
+        console.error(`❌ 章节 ID ${newId} 已存在（与插入点之前的章节冲突），请检查`);
         process.exit(1);
     }
 

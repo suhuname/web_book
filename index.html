@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>写书工具 - 小说编辑</title>
-    <link rel="stylesheet" href="css/style.css?v=20260727-1">
+    <link rel="stylesheet" href="css/style.css?v=20260727-2">
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -24,10 +24,9 @@
             <button class="btn btn-save" id="btnSaveToFile">💾 保存到文件</button>
             <button class="btn btn-secondary" id="btnExport">📥 导出</button>
             <button class="btn btn-refresh" id="btnRefresh">🔄 刷新</button>
-            <button class="btn btn-secondary" id="btnShare">🔗 分享</button>
             <div class="theme-switch">
-                <button class="theme-btn active" data-theme="dark" title="暗夜主题">🌙</button>
-                <button class="theme-btn" data-theme="green" title="护眼绿主题">🌿</button>
+                <button class="theme-btn active" data-theme="green" title="护眼绿主题">🌿</button>
+                <button class="theme-btn" data-theme="dark" title="暗夜主题">🌙</button>
                 <button class="theme-btn" data-theme="paper" title="纸墨主题">📄</button>
             </div>
         </div>
@@ -106,7 +105,52 @@
         </div>
     </div>
 
+    <!-- 浮动快捷按钮 -->
+    <button class="back-to-top" id="backToTop" title="回到顶部">↑</button>
+    <button class="back-to-bottom" id="backToBottom" title="跳到底部">↓</button>
+
     <script src="data/novel.js?v=20260726-2"></script>
     <script src="js/app.js?v=20260727-1"></script>
+    <script>
+        // 获取当前可见的可滚动容器（编辑模式→textarea，预览模式→preview-panel）
+        function _getScrollBox() {
+            var pv = document.getElementById('previewPanel');
+            return pv && pv.style.display !== 'none' ? pv : document.getElementById('editor');
+        }
+
+        // 浮动按钮点击事件
+        var btt = document.getElementById('backToTop');
+        var btb = document.getElementById('backToBottom');
+        btt.addEventListener('click', function() {
+            var el = _getScrollBox();
+            if (el) el.scrollTop = 0;
+        });
+        btb.addEventListener('click', function() {
+            var el = _getScrollBox();
+            if (el) el.scrollTop = el.scrollHeight;
+        });
+
+        // 根据当前可见面板的滚动位置更新按钮显隐
+        function _updateBtns() {
+            var el = _getScrollBox();
+            if (!el) return;
+            var st = el.scrollTop;
+            var nearBottom = st + el.clientHeight >= el.scrollHeight - 100;
+            btt.classList.toggle('visible', st > 300);
+            btb.classList.toggle('visible', st > 300 && !nearBottom);
+        }
+
+        // 监听内部滚动事件（textarea 和预览面板）
+        document.getElementById('editor').addEventListener('scroll', _updateBtns);
+        document.getElementById('previewPanel').addEventListener('scroll', _updateBtns);
+
+        // 模式切换按钮（编辑↔预览）后延迟刷新按钮状态
+        document.getElementById('modeEdit').addEventListener('click', function() {
+            setTimeout(_updateBtns, 60);
+        });
+        document.getElementById('modePreview').addEventListener('click', function() {
+            setTimeout(_updateBtns, 60);
+        });
+    </script>
 </body>
 </html>

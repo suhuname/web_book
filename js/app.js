@@ -54,21 +54,21 @@ class Storage {
 // ======================== 主题管理器 ========================
 
 class ThemeManager {
-    static themes = ['dark', 'green', 'paper'];
+    static themes = ['green', 'dark', 'paper'];
     static themeNames = {
-        dark: '暗夜',
         green: '护眼绿',
+        dark: '暗夜',
         paper: '纸墨'
     };
 
     static init() {
-        const saved = localStorage.getItem(THEME_KEY) || 'dark';
+        const saved = localStorage.getItem(THEME_KEY) || 'green';
         this.apply(saved);
         this._bindEvents();
     }
 
     static apply(theme) {
-        if (!this.themes.includes(theme)) theme = 'dark';
+        if (!this.themes.includes(theme)) theme = 'green';
         document.documentElement.setAttribute('data-theme', theme);
         localStorage.setItem(THEME_KEY, theme);
         document.querySelectorAll('.theme-btn').forEach(btn => {
@@ -398,17 +398,29 @@ class App {
     // ===================== 数据管理 =====================
 
     /**
-     * 从 window.__NOVEL_DATA__ 加载小说数据
-     * data/novel.js 异步从 data/chapters/*.json 拉取各章节后注入
-     * 每次刷新都从 JSON 文件重新拉取（不清除 localStorage 编辑缓存）
+     * 加载小说数据
+     * 优先通过 /api/novel 接口从磁盘读取最新数据（与「刷新」按钮逻辑一致）
+     * 接口不可用时降级到 window.__NOVEL_DATA__（用于无后端场景）
      */
     async _loadNovelData() {
-        // 等待异步章节加载完成（从 data/chapters/*.json fetch）
-        if (window.__NOVEL_READY__) {
-            await window.__NOVEL_READY__;
+        // 优先尝试通过服务器 API 获取最新数据
+        let novelData = null;
+        try {
+            const resp = await fetch('/api/novel', { cache: 'no-store' });
+            if (resp.ok) {
+                novelData = await resp.json();
+            }
+        } catch (e) {
+            console.warn('[加载] API 方式失败，降级到 novel.js 数据:', e);
         }
 
-        const novelData = window.__NOVEL_DATA__;
+        // 降级：使用 data/novel.js 注入的数据
+        if (!novelData || !novelData.chapters || novelData.chapters.length === 0) {
+            if (window.__NOVEL_READY__) {
+                await window.__NOVEL_READY__;
+            }
+            novelData = window.__NOVEL_DATA__;
+        }
 
         if (!novelData || !novelData.chapters || novelData.chapters.length === 0) {
             throw new Error('小说数据为空，请检查 data/novel.js 文件');
@@ -433,7 +445,7 @@ class App {
             activeChapterId: novelData.chapters.length > 0 ? novelData.chapters[0].id : null
         };
 
-        // 写入 localStorage 作为编辑会话的缓存（刷新后重新拉取 JSON 覆盖）
+        // 写入 localStorage 作为编辑会话的缓存
         Storage.save(this.data);
     }
 
@@ -586,6 +598,9 @@ class App {
     _switchMode(mode) {
         if (mode === this.currentMode) return;
 
+        // 保存当前模式的滚动位置（按百分比）
+        const scrollPercent = this._getScrollPercent();
+
         this.currentMode = mode;
 
         // 更新按钮状态
@@ -600,6 +615,46 @@ class App {
             this.els.editorPanel.style.display = 'none';
             this.els.previewPanel.style.display = 'block';
             this._renderPreview();
+        }
+
+        // 在下一帧恢复滚动位置，确保 DOM 已完成渲染
+        requestAnimationFrame(() => {
+            this._restoreScrollPercent(scrollPercent);
+        });
+    }
+
+    /**
+     * 获取当前可见面板的滚动百分比 (0~1)
+     */
+    _getScrollPercent() {
+        if (this.currentMode === 'edit') {
+            const el = this.els.editor;
+            if (el && el.scrollHeight > el.clientHeight) {
+                return el.scrollTop / (el.scrollHeight - el.clientHeight);
+            }
+        } else {
+            const el = this.els.previewPanel;
+            if (el && el.scrollHeight > el.clientHeight) {
+                return el.scrollTop / (el.scrollHeight - el.clientHeight);
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * 按百分比恢复滚动位置
+     */
+    _restoreScrollPercent(percent) {
+        if (this.currentMode === 'edit') {
+            const el = this.els.editor;
+            if (el) {
+                el.scrollTop = percent * (el.scrollHeight - el.clientHeight);
+            }
+        } else {
+            const el = this.els.previewPanel;
+            if (el) {
+                el.scrollTop = percent * (el.scrollHeight - el.clientHeight);
+            }
         }
     }
 

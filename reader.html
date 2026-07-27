@@ -57,8 +57,8 @@ html,body{overflow:auto;height:auto}
 <div class="topbar">
 <a class="brand" href="reader.html">📖 星落之城</a>
 <div class="theme-switch">
-<button class="theme-btn" data-theme="dark" title="暗夜">🌙</button>
 <button class="theme-btn active" data-theme="green" title="护眼绿">🌿</button>
+<button class="theme-btn" data-theme="dark" title="暗夜">🌙</button>
 <button class="theme-btn" data-theme="paper" title="纸墨">📄</button>
 </div>
 </div>
@@ -78,7 +78,20 @@ html,body{overflow:auto;height:auto}
 <h3>📖 目录</h3>
 <div id="tocList"></div>
 </div>
+<!-- 浮动快捷按钮 -->
+<button class="back-to-top" id="backToTop2" title="回到顶部" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+<button class="back-to-bottom" id="backToBottom2" title="跳到底部" onclick="window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})">↓</button>
 <script src="data/novel.js?v=20260726-2"></script>
 <script src="js/reader.js"></script>
+<script>
+    var btt2 = document.getElementById('backToTop2');
+    var btb2 = document.getElementById('backToBottom2');
+    window.addEventListener('scroll', function() {
+        var scrollY = window.scrollY;
+        var isBottom = scrollY + window.innerHeight >= document.documentElement.scrollHeight - 100;
+        btt2.classList.toggle('visible', scrollY > 300);
+        btb2.classList.toggle('visible', scrollY > 300 && !isBottom);
+    });
+</script>
 </body>
 </html>

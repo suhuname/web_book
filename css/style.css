@@ -872,3 +872,44 @@ body {
 .editor-statusbar span:nth-child(3)::before {
     background: #2ecc71;
 }
+
+/* ========== Floating Action Buttons ========== */
+.back-to-top,
+.back-to-bottom {
+    position: fixed;
+    right: 28px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 44px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 2px 12px rgba(0,0,0,.3);
+    z-index: 999;
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity .3s ease, transform .3s ease, background .25s ease;
+    pointer-events: none;
+}
+.back-to-top {
+    bottom: 80px;
+}
+.back-to-bottom {
+    bottom: 28px;
+}
+.back-to-top:hover,
+.back-to-bottom:hover {
+    background: var(--accent-hover);
+    transform: translateY(16px) scale(1.1);
+}
+.back-to-top.visible,
+.back-to-bottom.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}

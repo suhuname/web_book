@@ -108,7 +108,26 @@ node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('data/novel.j
 3. 更新章节的 `title`（如从"第四章"改为"第四章 并肩作战"）
 4. 更新 `summary` 字段为本章剧情摘要
 
-### Phase 5: 记忆记录
+### Phase 5: 版本备份
+
+每次章节内容最终定稿后，必须执行版本备份：
+
+1. 运行备份脚本将当前章节文件保存到 [`temp/`](temp/) 目录：
+   ```bash
+   node tools/backup-chapter.js data/chapters/<章节ID>.json "<描述>"
+   ```
+   示例：
+   ```bash
+   node tools/backup-chapter.js data/chapters/ch_2.json "闺蜜夜话-v2"
+   ```
+
+2. 备份文件命名格式：`YYYYMMDD_HHmmss_章节ID_描述.json`
+
+3. 自动管理上限 **100 个备份**，超出时删除最旧的文件
+
+4. 需要恢复历史版本时，从 `temp/` 目录找到对应备份文件，手动复制回 `data/chapters/` 目录
+
+### Phase 6: 记忆记录
 
 创作完成后，必须记录本次创作操作：
 
@@ -136,7 +155,9 @@ write_book/
 ├── js/
 │   └── app.js              # 核心应用逻辑
 ├── tools/
-│   └── insert-chapter.js   # ⭐ 章节插入工具 — 在任意位置插入章节并自动重编号
+│   ├── insert-chapter.js   # ⭐ 章节插入工具 — 在任意位置插入章节并自动重编号
+│   └── backup-chapter.js   # ⭐ 版本备份工具 — 保存章节定稿到 temp/，上限100份
+├── temp/                   # 章节版本备份目录（自动管理，上限100份）
 ├── data/
 │   ├── novel.json          # 小说数据（JSON 格式，含 book 元信息和 chapters）
 │   ├── novel.js            # 小说数据（通过 <script> 加载）
@@ -154,20 +175,21 @@ write_book/
 
 | 章节 | 标题 | 状态 | 字数 | 大纲参考 |
 |------|------|------|------|---------|
-| ch_1 | 第一章 雨夜邂逅 | ✅ 已完成 | 2113 | [第一章大纲](data/outline.md:48) — 雨夜咖啡厅相遇 |
-| ch_2 | 第二章 闺蜜夜话 | ✅ 已完成 | 2076 | [第二章大纲](data/outline.md:56) — 咖啡厅闺蜜后续 |
-| ch_3 | 第三章 星光不散 | ✅ 已完成 | 2091 | [第三章大纲](data/outline.md:64) — 面试录用 |
-| ch_4 | 第四章 初入星澜 | ✅ 已完成 | 2675 | [第四章大纲](data/outline.md:72) — 入职团队 |
-| ch_5 | 第五章 并肩作战 | ✅ 已完成 | 2143 | [第五章大纲](data/outline.md:82) — 并肩作战 |
-| ch_6 | 第六章 暗生情愫 | ✅ 已完成 | 2322 | [第六章大纲](data/outline.md:90) — 暗生情愫 |
-| ch_7 | 第七章 风波骤起 | ✅ 已完成 | 2048 | [第七章大纲](data/outline.md:98) — 风波骤起 |
-| ch_8 | 第八章 误会重重 | ✅ 已完成 | 2018 | [第八章大纲](data/outline.md:108) — 误会重重 |
-| ch_9 | 第九章 心墙渐融 | ✅ 已完成 | 2978 | [第九章大纲](data/outline.md:116) — 心墙渐融 |
-| ch_10 | 第十章 患难与共 | ✅ 已完成 | 2166 | [第十章大纲](data/outline.md:124) — 患难与共 |
-| ch_11 | 第十一章 星澜绽放 | ✅ 已完成 | 2228 | [第十一章大纲](data/outline.md:132) — 星澜绽放 |
-| ch_12 | 第十二章 风雨考验 | ⬜ 待创作 | 0 | [第十二章大纲](data/outline.md:140) — 风雨考验 |
-| ch_13 | 第十三章 坚定选择 | ⬜ 待创作 | 0 | [第十三章大纲](data/outline.md:148) — 坚定选择 |
-| ch_14 | 第十四章 山雨欲来 | ⬜ 待创作 | 0 | [第十四章大纲](data/outline.md:156) — 山雨欲来 |
+| ch_1 | 第一章 雨夜邂逅 | ✅ 已完成 | 2113 | [第一章大纲](data/outline.md) — 雨夜咖啡厅相遇 |
+| ch_2 | 第二章 闺蜜夜话 | ✅ 已完成 | 2076 | [第二章大纲](data/outline.md) — 咖啡厅闺蜜后续 |
+| ch_3 | 第三章 星光不散 | ✅ 已完成 | 2091 | [第三章大纲](data/outline.md) — 面试录用 |
+| ch_4 | 第四章 初入星澜 | ✅ 已完成 | 2675 | [第四章大纲](data/outline.md) — 入职团队 |
+| ch_5 | 第五章 人间星火 | ✅ 已完成 | 2996 | [第五章大纲](data/outline.md) — 灵感采风（新增） |
+| ch_6 | 第六章 并肩作战 | ✅ 已完成 | 2143 | [第六章大纲](data/outline.md) — 并肩作战 |
+| ch_7 | 第七章 暗生情愫 | ✅ 已完成 | 2322 | [第七章大纲](data/outline.md) — 暗生情愫 |
+| ch_8 | 第八章 风波骤起 | ✅ 已完成 | 2048 | [第八章大纲](data/outline.md) — 风波骤起 |
+| ch_9 | 第九章 误会重重 | ✅ 已完成 | 2018 | [第九章大纲](data/outline.md) — 误会重重 |
+| ch_10 | 第十章 心墙渐融 | ✅ 已完成 | 2978 | [第十章大纲](data/outline.md) — 心墙渐融 |
+| ch_11 | 第十一章 患难与共 | ✅ 已完成 | 2166 | [第十一章大纲](data/outline.md) — 患难与共 |
+| ch_12 | 第十二章 星澜绽放 | ✅ 已完成 | 2228 | [第十二章大纲](data/outline.md) — 星澜绽放 |
+| ch_13 | 第十三章 风雨考验 | ⬜ 待创作 | 0 | [第十三章大纲](data/outline.md) — 风雨考验 |
+| ch_14 | 第十四章 坚定选择 | ⬜ 待创作 | 0 | [第十四章大纲](data/outline.md) — 坚定选择 |
+| ch_15 | 第十五章 山雨欲来 | ⬜ 待创作 | 0 | [第十五章大纲](data/outline.md) — 山雨欲来 |
 
 ---
 
@@ -288,17 +310,41 @@ rm ./temp/new-chapter.txt
 ### 脚本自动完成的事项
 
 1. ✅ 在 `novel.json` 的指定位置插入新章节
-2. ✅ 后续章节的 `id` 和 `title` 自动递增重编号（ch_8→ch_9→ch_10…）
-3. ✅ 重命名 `data/chapters/` 下对应的 JSON 文件
+2. ✅ 后续章节的 `id` 和 `title` 自动递增重编号（ch_5→ch_6→ch_7…）
+3. ✅ 重命名 `data/chapters/` 下对应的 JSON 文件（**逆序处理**，防止级联覆盖）
 4. ✅ 更新每个 JSON 文件内部的 `id` 和 `title` 字段
 5. ✅ 重新生成 `data/novel.js`
-6. ✅ 验证所有 JSON 文件完整性
-7. ✅ 输出字数统计和操作概要
+6. ✅ 自动更新 `data/outline.md` — 插入新章节行、重编号后续章节标题、更新幕范围
+7. ✅ 验证所有 JSON 文件完整性
+8. ✅ 输出字数统计和操作概要
 
 ### 不包含自动处理的内容（需要手动完成）
 
-- **大纲更新**：`data/outline.md` 需要手动插入新章节的剧情描述
+- **大纲剧情描述**：`data/outline.md` 中新章节的开篇/发展/高潮/收尾等详细剧情要点需要手动补充（脚本只插入骨架和编号）
 - **记忆记录**：在 `memory/` 中手动记录创作日志
+
+### ⚠️ 故障恢复指南
+
+当插入脚本执行异常（如文件丢失、级联覆盖）时，按以下优先级恢复：
+
+**第一优先级：Git 恢复（推荐）**
+```bash
+# 1. 查看最近的提交中受影响的文件
+git show --name-status HEAD
+
+# 2. 从 Git 恢复单个章节文件
+git show HEAD:data/chapters/ch_X.json > data/chapters/ch_Y.json
+
+# 3. 用 Node.js 脚本批量恢复并重编号（参考 temp/restore-chapters.js 示例）
+```
+
+**第二优先级：版本备份恢复**
+从 `temp/` 目录找到对应备份文件（`YYYYMMDD_HHmmss_章节ID_描述.json`），手动复制回 `data/chapters/`
+
+**第三优先级：手动重建**
+根据 `data/novel.json` 中的 summary 和大纲指引重新创作丢失的章节内容
+
+> **原则**：优先使用 Git 恢复，Git 不可行时再考虑备份或重建。每次操作前先提交 Git 以便快速回滚。
 
 ---
 

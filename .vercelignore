@@ -1,0 +1,8 @@
+.roo/
+fix.py
+fix_all.py
+gen_reader.py
+*.md
+!data/outline.md
+node_modules/
+.git/

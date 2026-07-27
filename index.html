@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>写书工具 - 小说编辑</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="toolbar">
+        <div class="toolbar-left">
+            <h1 class="app-title">📝 写书工具</h1>
+            <span class="book-title-display" id="bookTitleDisplay"></span>
+        </div>
+        <div class="toolbar-center">
+            <div class="mode-switch">
+                <button class="mode-btn active" data-mode="edit" id="modeEdit">✏️ 编辑</button>
+                <button class="mode-btn" data-mode="preview" id="modePreview">👁️ 预览</button>
+            </div>
+        </div>
+        <div class="toolbar-right">
+            <button class="btn btn-primary" id="btnAddChapter">➕ 新增章节</button>
+            <button class="btn btn-save" id="btnSaveToFile">💾 保存到文件</button>
+            <button class="btn btn-secondary" id="btnExport">📥 导出</button>
+            <button class="btn btn-secondary" id="btnShare">🔗 分享</button>
+            <div class="theme-switch">
+                <button class="theme-btn active" data-theme="dark" title="暗夜主题">🌙</button>
+                <button class="theme-btn" data-theme="green" title="护眼绿主题">🌿</button>
+                <button class="theme-btn" data-theme="paper" title="纸墨主题">📄</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区域 -->
+    <main class="main-container">
+        <!-- 左侧章节列表 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>📖 目录</h2>
+                <span class="chapter-count" id="chapterCount">0 章</span>
+            </div>
+            <div class="chapter-list" id="chapterList">
+                <!-- 由 JavaScript 动态渲染 -->
+            </div>
+        </aside>
+
+        <!-- 右侧编辑/预览区 -->
+        <section class="content-area">
+            <!-- 当前章节标题 -->
+            <div class="chapter-title-bar">
+                <input type="text" id="chapterTitleInput" class="chapter-title-input" placeholder="章节标题">
+            </div>
+
+            <!-- 编辑模式 -->
+            <div class="editor-panel" id="editorPanel">
+                <textarea id="editor" class="editor-textarea" placeholder="开始你的创作...&#10;&#10;支持 Markdown 语法：&#10;# 一级标题&#10;## 二级标题&#10;**粗体** *斜体*&#10;> 引用&#10;- 列表项&#10;--- 分隔线"></textarea>
+                <div class="editor-statusbar">
+                    <span id="wordCount">字数: 0</span>
+                    <span id="charCount">字符: 0</span>
+                    <span id="lineCount">行数: 0</span>
+                </div>
+            </div>
+
+            <!-- 预览模式 -->
+            <div class="preview-panel" id="previewPanel" style="display: none;">
+                <div class="preview-content" id="previewContent">
+                    <div class="preview-placeholder">选择一个章节开始预览</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 重命名弹窗 -->
+    <div class="modal-overlay" id="renameModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>重命名章节</h3>
+                <button class="modal-close" id="renameModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="renameInput" class="modal-input" placeholder="输入新名称">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="renameCancel">取消</button>
+                <button class="btn btn-primary" id="renameConfirm">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除确认弹窗 -->
+    <div class="modal-overlay" id="deleteModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>删除章节</h3>
+                <button class="modal-close" id="deleteModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmText">确定要删除该章节吗？此操作不可撤销。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="deleteCancel">取消</button>
+                <button class="btn btn-danger" id="deleteConfirm">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="data/novel.js?v=20260726-2"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

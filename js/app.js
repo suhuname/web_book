@@ -1,0 +1,1073 @@
+/**
+ * 写书工具 - 小说编辑应用
+ * 支持章节管理、Markdown 编辑与预览、自动保存等
+ */
+
+// ======================== 数据层 ========================
+
+const STORAGE_KEY = 'write_book_data';
+const THEME_KEY = 'write_book_theme';
+
+const DEFAULT_DATA = {
+    chapters: [],
+    activeChapterId: null
+};
+
+class Storage {
+    static load() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const data = JSON.parse(raw);
+                // 数据完整性校验
+                if (data && Array.isArray(data.chapters) && data.chapters.length > 0) {
+                    return data;
+                }
+            }
+        } catch (e) {
+            console.warn('数据加载失败，使用默认数据', e);
+        }
+        return null;
+    }
+
+    static save(data) {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            return true;
+        } catch (e) {
+            console.error('数据保存失败', e);
+            return false;
+        }
+    }
+
+    static export(data) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `小说备份_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+}
+
+// ======================== 主题管理器 ========================
+
+class ThemeManager {
+    static themes = ['dark', 'green', 'paper'];
+    static themeNames = {
+        dark: '暗夜',
+        green: '护眼绿',
+        paper: '纸墨'
+    };
+
+    static init() {
+        const saved = localStorage.getItem(THEME_KEY) || 'dark';
+        this.apply(saved);
+        this._bindEvents();
+    }
+
+    static apply(theme) {
+        if (!this.themes.includes(theme)) theme = 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem(THEME_KEY, theme);
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.theme === theme);
+        });
+    }
+
+    static _bindEvents() {
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.apply(btn.dataset.theme);
+            });
+        });
+    }
+}
+
+// ======================== Markdown 渲染器 ========================
+
+class MarkdownRenderer {
+    /**
+     * 将 Markdown 文本渲染为 HTML
+     * 支持：标题、粗体、斜体、引用、列表、代码、链接、图片、表格、分隔线
+     */
+    static render(text) {
+        if (!text || !text.trim()) {
+            return '<div class="preview-placeholder">✨ 内容为空，开始写作吧</div>';
+        }
+
+        // 第一步：提取并保护代码块
+        const codeBlocks = [];
+        let processed = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+            const index = codeBlocks.length;
+            const escaped = code
+                .replace(/&/g, '&')
+                .replace(/</g, '<')
+                .replace(/>/g, '>');
+            codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
+            return `\x00CODEBLOCK_${index}\x00`;
+        });
+
+        // 转义 HTML
+        processed = processed
+            .replace(/&/g, '&')
+            .replace(/</g, '<')
+            .replace(/>/g, '>');
+
+        // 行内标记处理（在每行中处理）
+        const lines = processed.split('\n');
+        const blocks = [];
+        let i = 0;
+
+        while (i < lines.length) {
+            const line = lines[i];
+            const trimmed = line.trim();
+
+            // 空行
+            if (!trimmed) {
+                blocks.push({ type: 'blank' });
+                i++;
+                continue;
+            }
+
+            // 恢复代码块标记
+            const codeBlockMatch = trimmed.match(/^\x00CODEBLOCK_(\d+)\x00$/);
+            if (codeBlockMatch) {
+                blocks.push({ type: 'code', content: codeBlocks[parseInt(codeBlockMatch[1])] });
+                i++;
+                continue;
+            }
+
+            // 标题
+            const hMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+            if (hMatch) {
+                const level = hMatch[1].length;
+                const title = this._inlineMarkdown(hMatch[2]);
+                blocks.push({ type: `h${level}`, content: `<h${level}>${title}</h${level}>` });
+                i++;
+                continue;
+            }
+
+            // 分隔线
+            if (/^---+\s*$/.test(trimmed) || /^\*\*\*+\s*$/.test(trimmed)) {
+                blocks.push({ type: 'hr', content: '<hr>' });
+                i++;
+                continue;
+            }
+
+            // 引用块（收集多行）
+            if (trimmed.startsWith('>')) {
+                const quoteLines = [];
+                while (i < lines.length && lines[i].trim().startsWith('>')) {
+                    quoteLines.push(lines[i].trim().replace(/^>\s?/, ''));
+                    i++;
+                }
+                const quoteContent = quoteLines
+                    .map(l => `<p>${this._inlineMarkdown(l)}</p>`)
+                    .join('');
+                blocks.push({ type: 'blockquote', content: `<blockquote>${quoteContent}</blockquote>` });
+                continue;
+            }
+
+            // 无序列表（收集连续项）
+            if (/^[\*\-]\s/.test(trimmed)) {
+                const items = [];
+                while (i < lines.length) {
+                    const t = lines[i].trim();
+                    if (/^[\*\-]\s/.test(t)) {
+                        items.push(this._inlineMarkdown(t.replace(/^[\*\-]\s+/, '')));
+                        i++;
+                    } else if (t === '') {
+                        i++; // 跳过空行
+                        // 如果下一行还是列表项，继续收集
+                        if (i < lines.length && /^[\*\-]\s/.test(lines[i].trim())) {
+                            continue;
+                        }
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                const lis = items.map(item => `<li>${item}</li>`).join('');
+                blocks.push({ type: 'ul', content: `<ul>${lis}</ul>` });
+                continue;
+            }
+
+            // 有序列表（收集连续项）
+            if (/^\d+\.\s/.test(trimmed)) {
+                const items = [];
+                while (i < lines.length) {
+                    const t = lines[i].trim();
+                    const olMatch = t.match(/^\d+\.\s+(.+)$/);
+                    if (olMatch) {
+                        items.push(this._inlineMarkdown(olMatch[1]));
+                        i++;
+                    } else if (t === '') {
+                        i++;
+                        if (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+                            continue;
+                        }
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                const lis = items.map(item => `<li>${item}</li>`).join('');
+                blocks.push({ type: 'ol', content: `<ol>${lis}</ol>` });
+                continue;
+            }
+
+            // 表格行
+            if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+                const rows = [];
+                let isHeader = true;
+                while (i < lines.length) {
+                    const t = lines[i].trim();
+                    if (!t.startsWith('|') || !t.endsWith('|')) break;
+                    
+                    const cells = t.split('|').filter(c => c.trim());
+                    
+                    // 检测分隔行
+                    if (cells.every(c => /^[\s\-:]+$/.test(c.trim()))) {
+                        isHeader = false;
+                        i++;
+                        continue;
+                    }
+                    
+                    const tag = isHeader ? 'th' : 'td';
+                    const rowCells = cells.map(c => `<${tag}>${this._inlineMarkdown(c.trim())}</${tag}>`).join('');
+                    rows.push(`<tr>${rowCells}</tr>`);
+                    if (isHeader) isHeader = false;
+                    i++;
+                }
+                if (rows.length > 0) {
+                    blocks.push({ type: 'table', content: `<table>${rows.join('')}</table>` });
+                }
+                continue;
+            }
+
+            // 普通段落（收集多行直到空行）
+            const paraLines = [trimmed];
+            i++;
+            while (i < lines.length) {
+                const nextTrimmed = lines[i].trim();
+                if (!nextTrimmed || /^(#|>|\d+\.\s|[\*\-]\s|\||---)/.test(nextTrimmed)) break;
+                if (/^\x00CODEBLOCK_/.test(nextTrimmed)) break;
+                paraLines.push(nextTrimmed);
+                i++;
+            }
+            const paraContent = paraLines
+                .map(l => this._inlineMarkdown(l))
+                .join('<br>');
+            blocks.push({ type: 'p', content: `<p>${paraContent}</p>` });
+        }
+
+        // 组装最终 HTML
+        const html = blocks
+            .filter(b => b.type !== 'blank')
+            .map(b => b.content)
+            .join('\n');
+
+        return html;
+    }
+
+    /**
+     * 处理行内 Markdown 标记：粗体、斜体、代码、链接、图片
+     */
+    static _inlineMarkdown(text) {
+        if (!text) return '';
+
+        let result = text;
+
+        // 行内代码（先处理，避免干扰其他标记）
+        result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // 图片
+        result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">');
+
+        // 链接
+        result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+        // 粗体+斜体 *** ***
+        result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+        result = result.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
+
+        // 粗体 ** **
+        result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        result = result.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+        // 斜体 * *
+        result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        result = result.replace(/_(.+?)_/g, '<em>$1</em>');
+
+        // 删除线
+        result = result.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+        return result;
+    }
+}
+
+// ======================== 应用主逻辑 ========================
+
+class App {
+    constructor() {
+        // 初始化主题
+        ThemeManager.init();
+        // DOM 引用
+        this.els = {
+            chapterList: document.getElementById('chapterList'),
+            chapterTitleInput: document.getElementById('chapterTitleInput'),
+            chapterCount: document.getElementById('chapterCount'),
+            editor: document.getElementById('editor'),
+            editorPanel: document.getElementById('editorPanel'),
+            previewPanel: document.getElementById('previewPanel'),
+            previewContent: document.getElementById('previewContent'),
+            modeEdit: document.getElementById('modeEdit'),
+            modePreview: document.getElementById('modePreview'),
+            btnAddChapter: document.getElementById('btnAddChapter'),
+            btnSaveToFile: document.getElementById('btnSaveToFile'),
+            btnExport: document.getElementById('btnExport'),
+            btnShare: document.getElementById('btnShare'),
+            wordCount: document.getElementById('wordCount'),
+            charCount: document.getElementById('charCount'),
+            lineCount: document.getElementById('lineCount'),
+            bookTitle: document.getElementById('bookTitleDisplay'),
+            // 重命名弹窗
+            renameModal: document.getElementById('renameModal'),
+            renameInput: document.getElementById('renameInput'),
+            renameConfirm: document.getElementById('renameConfirm'),
+            renameCancel: document.getElementById('renameCancel'),
+            renameModalClose: document.getElementById('renameModalClose'),
+            // 删除弹窗
+            deleteModal: document.getElementById('deleteModal'),
+            deleteConfirmText: document.getElementById('deleteConfirmText'),
+            deleteConfirm: document.getElementById('deleteConfirm'),
+            deleteCancel: document.getElementById('deleteCancel'),
+            deleteModalClose: document.getElementById('deleteModalClose'),
+        };
+
+        // 状态
+        this.data = null;
+        this.bookMeta = null;
+        this.currentMode = 'edit'; // 'edit' | 'preview'
+        this.pendingRenameId = null;
+        this.pendingDeleteId = null;
+        this.saveTimer = null;
+        this.initialized = false;
+
+        // 启动加载流程
+        this._start();
+    }
+
+    /**
+     * 启动应用：先绑定基本事件，然后加载小说数据
+     */
+    _start() {
+        // 先绑定导出等不依赖数据的事件
+        this._bindCoreEvents();
+
+        // 显示加载状态
+        this.els.editor.placeholder = '正在加载小说数据...';
+        this.els.chapterList.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">⏳</div>
+                <div class="empty-state-text">加载中...</div>
+            </div>
+        `;
+
+        // 延迟一帧执行，让 UI 先更新
+        setTimeout(async () => {
+            try {
+                await this._loadNovelData();
+                this._init();
+            } catch (err) {
+                console.error('小说数据加载失败', err);
+                this.els.editor.placeholder = '⚠️ 数据加载失败，请检查 data/novel.js 是否存在';
+                this.els.chapterList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-text">数据加载失败，请刷新重试</div>
+                    </div>
+                `;
+            }
+        }, 0);
+    }
+
+    // ===================== 数据管理 =====================
+
+    /**
+     * 从 window.__NOVEL_DATA__ 加载小说数据
+     * data/novel.js 异步从 data/chapters/*.json 拉取各章节后注入
+     * 每次刷新都从 JSON 文件重新拉取（不清除 localStorage 编辑缓存）
+     */
+    async _loadNovelData() {
+        // 等待异步章节加载完成（从 data/chapters/*.json fetch）
+        if (window.__NOVEL_READY__) {
+            await window.__NOVEL_READY__;
+        }
+
+        const novelData = window.__NOVEL_DATA__;
+
+        if (!novelData || !novelData.chapters || novelData.chapters.length === 0) {
+            throw new Error('小说数据为空，请检查 data/novel.js 文件');
+        }
+
+        // 保存书籍元信息
+        this.bookMeta = novelData.book || {};
+
+        // 显示书名
+        if (this.els.bookTitle && this.bookMeta.title) {
+            this.els.bookTitle.textContent = `《${this.bookMeta.title}》`;
+            document.title = `${this.bookMeta.title} - 写书工具`;
+        }
+
+        // 从 JSON 文件直接构建数据（始终以文件内容为准）
+        this.data = {
+            chapters: novelData.chapters.map(ch => ({
+                id: ch.id,
+                title: ch.title,
+                content: ch.content || ''
+            })),
+            activeChapterId: novelData.chapters.length > 0 ? novelData.chapters[0].id : null
+        };
+
+        // 写入 localStorage 作为编辑会话的缓存（刷新后重新拉取 JSON 覆盖）
+        Storage.save(this.data);
+    }
+
+    _saveData() {
+        if (this.data) {
+            Storage.save(this.data);
+        }
+    }
+
+    _getActiveChapter() {
+        if (!this.data) return null;
+        return this.data.chapters.find(ch => ch.id === this.data.activeChapterId);
+    }
+
+    // ===================== 初始化 =====================
+
+    _init() {
+        if (!this.data || this.data.chapters.length === 0) {
+            // 没有数据时显示空状态
+            this.els.chapterList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <div class="empty-state-text">暂无章节，请检查 data/novel.json 文件</div>
+                </div>
+            `;
+            return;
+        }
+
+        this._renderChapterList();
+        this._loadActiveChapter();
+        this._updateChapterCount();
+        this._bindEvents();
+        this.initialized = true;
+    }
+
+    // ===================== 事件绑定 =====================
+
+    /**
+     * 绑定不依赖数据加载的核心事件（在 _start 中尽早绑定）
+     */
+    _bindCoreEvents() {
+        // 导出按钮（提前绑定，但需要数据就绪）
+        this.els.btnExport.addEventListener('click', () => {
+            if (this.data) {
+                Storage.export(this.data);
+            }
+        });
+
+        // 保存到文件按钮
+        this.els.btnSaveToFile.addEventListener('click', () => {
+            if (this.data) {
+                this._saveToJsonFile();
+            }
+        });
+
+        // 分享按钮
+        if (this.els.btnShare) {
+            this.els.btnShare.addEventListener('click', () => {
+                if (this.data) {
+                    this._shareBook();
+                }
+            });
+        }
+    }
+
+    /**
+     * 绑定所有需要数据就绪的事件（在 _init 中绑定）
+     */
+    _bindEvents() {
+        // 模式切换
+        this.els.modeEdit.addEventListener('click', () => this._switchMode('edit'));
+        this.els.modePreview.addEventListener('click', () => this._switchMode('preview'));
+
+        // 新增章节
+        this.els.btnAddChapter.addEventListener('click', () => this._addChapter());
+
+        // 编辑器输入（自动保存 + 统计）
+        this.els.editor.addEventListener('input', () => {
+            this._scheduleSave();
+            this._updateStats();
+        });
+
+        // 章节标题修改
+        this.els.chapterTitleInput.addEventListener('change', () => {
+            const ch = this._getActiveChapter();
+            if (ch) {
+                ch.title = this.els.chapterTitleInput.value.trim() || ch.title;
+                this.els.chapterTitleInput.value = ch.title;
+                this._saveData();
+                this._renderChapterList();
+            }
+        });
+
+        // 重命名弹窗
+        this.els.renameConfirm.addEventListener('click', () => this._confirmRename());
+        this.els.renameCancel.addEventListener('click', () => this._closeRenameModal());
+        this.els.renameModalClose.addEventListener('click', () => this._closeRenameModal());
+        this.els.renameModal.addEventListener('click', (e) => {
+            if (e.target === this.els.renameModal) this._closeRenameModal();
+        });
+        this.els.renameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this._confirmRename();
+            if (e.key === 'Escape') this._closeRenameModal();
+        });
+
+        // 删除弹窗
+        this.els.deleteConfirm.addEventListener('click', () => this._confirmDelete());
+        this.els.deleteCancel.addEventListener('click', () => this._closeDeleteModal());
+        this.els.deleteModalClose.addEventListener('click', () => this._closeDeleteModal());
+        this.els.deleteModal.addEventListener('click', (e) => {
+            if (e.target === this.els.deleteModal) this._closeDeleteModal();
+        });
+
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+S 保存
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                this._saveNow();
+            }
+            // Ctrl+Shift+P 切换预览
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+                e.preventDefault();
+                this._switchMode(this.currentMode === 'edit' ? 'preview' : 'edit');
+            }
+            // Ctrl+N 新增章节
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                this._addChapter();
+            }
+            // Escape 关闭弹窗
+            if (e.key === 'Escape') {
+                this._closeRenameModal();
+                this._closeDeleteModal();
+            }
+        });
+    }
+
+    // ===================== 模式切换 =====================
+
+    _switchMode(mode) {
+        if (mode === this.currentMode) return;
+
+        this.currentMode = mode;
+
+        // 更新按钮状态
+        this.els.modeEdit.classList.toggle('active', mode === 'edit');
+        this.els.modePreview.classList.toggle('active', mode === 'preview');
+
+        // 切换面板
+        if (mode === 'edit') {
+            this.els.editorPanel.style.display = 'flex';
+            this.els.previewPanel.style.display = 'none';
+        } else {
+            this.els.editorPanel.style.display = 'none';
+            this.els.previewPanel.style.display = 'block';
+            this._renderPreview();
+        }
+    }
+
+    // ===================== 章节渲染 =====================
+
+    _renderChapterList() {
+        const list = this.els.chapterList;
+        list.innerHTML = '';
+
+        if (this.data.chapters.length === 0) {
+            list.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <div class="empty-state-text">还没有章节，点击上方按钮新增</div>
+                </div>
+            `;
+            return;
+        }
+
+        this.data.chapters.forEach((ch, index) => {
+            const item = document.createElement('div');
+            item.className = `chapter-item${ch.id === this.data.activeChapterId ? ' active' : ''}`;
+            item.dataset.id = ch.id;
+
+            // 获取预览文本（用于显示摘要）
+            const previewText = ch.content
+                .replace(/[#*`>\[\]()_\-]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .substring(0, 30);
+
+            item.innerHTML = `
+                <span class="chapter-number">${index + 1}</span>
+                <span class="chapter-name" title="${this._escapeHtml(ch.title)}${previewText ? ' — ' + this._escapeHtml(previewText) + '...' : ''}">${this._escapeHtml(ch.title)}</span>
+                <div class="chapter-item-actions">
+                    <button class="btn-icon rename-btn" title="重命名">✏️</button>
+                    <button class="btn-icon danger delete-btn" title="删除">🗑️</button>
+                </div>
+            `;
+
+            // 点击切换章节
+            item.addEventListener('click', (e) => {
+                // 如果点击的是按钮，不切换
+                if (e.target.closest('.btn-icon')) return;
+                this._switchChapter(ch.id);
+            });
+
+            // 重命名按钮
+            item.querySelector('.rename-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._openRenameModal(ch.id);
+            });
+
+            // 删除按钮
+            item.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._openDeleteModal(ch.id);
+            });
+
+            list.appendChild(item);
+        });
+    }
+
+    _loadActiveChapter() {
+        const ch = this._getActiveChapter();
+        if (ch) {
+            this.els.chapterTitleInput.value = ch.title;
+            this.els.editor.value = ch.content;
+            this._updateStats();
+        }
+    }
+
+    _updateChapterCount() {
+        const count = this.data.chapters.length;
+        this.els.chapterCount.textContent = `${count} 章`;
+    }
+
+    // ===================== 章节操作 =====================
+
+    _switchChapter(chapterId) {
+        // 保存当前章节内容
+        this._saveCurrentChapter();
+
+        this.data.activeChapterId = chapterId;
+        this._saveData();
+
+        this._renderChapterList();
+        this._loadActiveChapter();
+
+        // 如果在预览模式，刷新预览
+        if (this.currentMode === 'preview') {
+            this._renderPreview();
+        }
+    }
+
+    _addChapter() {
+        const count = this.data.chapters.length;
+        const id = `ch_${Date.now()}`;
+        const title = `第${count + 1}章`;
+
+        this.data.chapters.push({ id, title, content: '' });
+        this.data.activeChapterId = id;
+        this._saveData();
+
+        this._renderChapterList();
+        this._loadActiveChapter();
+        this._updateChapterCount();
+
+        // 聚焦编辑器
+        this.els.editor.focus();
+
+        // 如果在预览模式，切换回编辑模式
+        if (this.currentMode === 'preview') {
+            this._switchMode('edit');
+        }
+    }
+
+    _openRenameModal(chapterId) {
+        const ch = this.data.chapters.find(c => c.id === chapterId);
+        if (!ch) return;
+
+        this.pendingRenameId = chapterId;
+        this.els.renameInput.value = ch.title;
+        this.els.renameModal.style.display = 'flex';
+        setTimeout(() => this.els.renameInput.focus(), 100);
+        this.els.renameInput.select();
+    }
+
+    _confirmRename() {
+        const newName = this.els.renameInput.value.trim();
+        if (!newName) return;
+
+        const ch = this.data.chapters.find(c => c.id === this.pendingRenameId);
+        if (ch) {
+            ch.title = newName;
+            this._saveData();
+            this._renderChapterList();
+
+            // 如果重命名的是当前章节，更新标题输入框
+            if (this.data.activeChapterId === this.pendingRenameId) {
+                this.els.chapterTitleInput.value = newName;
+            }
+        }
+
+        this._closeRenameModal();
+    }
+
+    _closeRenameModal() {
+        this.els.renameModal.style.display = 'none';
+        this.pendingRenameId = null;
+    }
+
+    _openDeleteModal(chapterId) {
+        if (this.data.chapters.length <= 1) {
+            alert('至少保留一个章节');
+            return;
+        }
+
+        const ch = this.data.chapters.find(c => c.id === chapterId);
+        if (!ch) return;
+
+        this.pendingDeleteId = chapterId;
+        this.els.deleteConfirmText.textContent = `确定要删除「${ch.title}」吗？此操作不可撤销。`;
+        this.els.deleteModal.style.display = 'flex';
+    }
+
+    _confirmDelete() {
+        const index = this.data.chapters.findIndex(c => c.id === this.pendingDeleteId);
+        if (index === -1) return;
+
+        this.data.chapters.splice(index, 1);
+
+        // 如果删除的是当前章节，切换到最后一个
+        if (this.data.activeChapterId === this.pendingDeleteId) {
+            const lastIndex = Math.min(index, this.data.chapters.length - 1);
+            this.data.activeChapterId = this.data.chapters[lastIndex].id;
+        }
+
+        this._saveData();
+        this._renderChapterList();
+        this._loadActiveChapter();
+        this._updateChapterCount();
+
+        if (this.currentMode === 'preview') {
+            this._renderPreview();
+        }
+
+        this._closeDeleteModal();
+    }
+
+    _closeDeleteModal() {
+        this.els.deleteModal.style.display = 'none';
+        this.pendingDeleteId = null;
+    }
+
+    // ===================== 编辑与保存 =====================
+
+    _saveCurrentChapter() {
+        const ch = this._getActiveChapter();
+        if (ch) {
+            ch.content = this.els.editor.value;
+            ch.title = this.els.chapterTitleInput.value.trim() || ch.title;
+            this.els.chapterTitleInput.value = ch.title;
+        }
+    }
+
+    _saveNow() {
+        this._saveCurrentChapter();
+        this._saveData();
+        // 显示保存成功提示
+        this._showSaveIndicator();
+    }
+
+    _scheduleSave() {
+        if (this.saveTimer) {
+            clearTimeout(this.saveTimer);
+        }
+        this.saveTimer = setTimeout(() => {
+            this._saveCurrentChapter();
+            this._saveData();
+        }, 500);
+    }
+
+    _showSaveIndicator(btn) {
+        if (!btn) btn = this.els.btnExport;
+        const originalText = btn.textContent;
+        const originalColor = btn.style.color;
+        btn.textContent = '✅ 已保存';
+        btn.style.color = '#2ecc71';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.color = originalColor;
+        }, 1500);
+    }
+
+    /**
+     * 将编辑后的内容保存到对应的章节 JSON 文件
+     * 通过本地服务器 API 写入 data/chapters/<id>.json
+     * 服务器不可用时降级为下载
+     */
+    async _saveToJsonFile() {
+        // 先保存当前正在编辑的章节
+        this._saveCurrentChapter();
+        this._saveData();
+
+        // 当前章节
+        const ch = this._getActiveChapter();
+        if (!ch) {
+            alert('没有可保存的章节');
+            return;
+        }
+
+        // 查找原始章节保留 summary
+        const original = window.__NOVEL_DATA__?.chapters?.find(oc => oc.id === ch.id);
+
+        // 构建当前章节数据
+        const chapterData = {
+            id: ch.id,
+            title: ch.title,
+            summary: original?.summary || '',
+            content: ch.content
+        };
+
+        // 构建完整数据（供后端写入 novel.json + 重新生成 novel.js）
+        const fullData = {
+            book: this.bookMeta || {
+                title: '星落之城',
+                author: '未命名',
+                genre: '都市言情',
+                description: '',
+                createdAt: new Date().toISOString().split('T')[0]
+            },
+            chapters: this.data.chapters.map(c => {
+                const orig = window.__NOVEL_DATA__?.chapters?.find(oc => oc.id === c.id);
+                return {
+                    id: c.id,
+                    title: c.title,
+                    summary: orig?.summary || '',
+                    content: c.content
+                };
+            })
+        };
+
+        // 同步更新内存
+        window.__NOVEL_DATA__ = fullData;
+
+        // 通过服务器 API 保存（写入 data/chapters/<id>.json + 更新 novel.js）
+        try {
+            const resp = await fetch('/api/novel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(fullData)
+            });
+
+            if (resp.ok) {
+                // 额外单独保存当前章节文件（确保即时性）
+                await fetch('/api/chapter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(chapterData)
+                });
+                this._showSaveIndicator(this.els.btnSaveToFile);
+                return;
+            }
+        } catch (e) {
+            console.warn('服务器 API 保存失败，降级到下载', e);
+        }
+
+        // 降级方案：下载当前章节的 JSON 文件
+        const jsonStr = JSON.stringify(chapterData, null, 4);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = ch.id + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this._showSaveIndicator(this.els.btnSaveToFile);
+    }
+
+    // ===================== 统计信息 =====================
+
+    _updateStats() {
+        const text = this.els.editor.value;
+        const wordCount = this._countWords(text);
+        const charCount = text.length;
+        const lineCount = text ? text.split('\n').length : 0;
+
+        this.els.wordCount.textContent = `字数: ${wordCount}`;
+        this.els.charCount.textContent = `字符: ${charCount}`;
+        this.els.lineCount.textContent = `行数: ${lineCount}`;
+    }
+
+    _countWords(text) {
+        // 中文按字计数，英文按单词计数
+        const chineseChars = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
+        const englishWords = text
+            .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g, ' ')
+            .split(/[\s,;.!?，。；！？、\n]+/)
+            .filter(w => w.length > 0).length;
+        return chineseChars + englishWords;
+    }
+
+    // ===================== 预览渲染 =====================
+
+    _renderPreview() {
+        const ch = this._getActiveChapter();
+        if (!ch) {
+            this.els.previewContent.innerHTML = '<div class="preview-placeholder">请选择一个章节</div>';
+            return;
+        }
+
+        const html = MarkdownRenderer.render(ch.content);
+        this.els.previewContent.innerHTML = html;
+    }
+
+    // ===================== 分享 =====================
+
+    /**
+     * 分享流程（本地后端版）：
+     * 1. 保存当前编辑内容到 localStorage
+     * 2. 调用本地服务器 API 保存到 novel.json
+     * 3. 获取服务器返回的局域网 IP，复制阅读页链接
+     * 4. 如果服务器未运行，引导用户启动 server.py
+     */
+    async _shareBook() {
+        // 先保存当前编辑内容
+        this._saveCurrentChapter();
+        this._saveData();
+
+        const btn = this.els.btnShare;
+        const origText = btn.textContent;
+
+        // 尝试连接本地服务器
+        let serverInfo = null;
+        try {
+            const resp = await fetch('/api/info', { method: 'GET', timeout: 3000 });
+            if (resp.ok) {
+                serverInfo = await resp.json();
+            }
+        } catch (e) {
+            // 服务器未运行或不是通过服务器访问
+            console.log('未检测到本地服务器', e);
+        }
+
+        if (serverInfo) {
+            // 服务器已运行：保存数据到服务器，然后复制链接
+            try {
+                const saveResp = await fetch('/api/novel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        book: this.bookMeta || { title: '未命名', author: '' },
+                        chapters: this.data.chapters.map(ch => ({
+                            id: ch.id,
+                            title: ch.title,
+                            content: ch.content || ''
+                        }))
+                    })
+                });
+                if (saveResp.ok) {
+                    const url = serverInfo.reader_url;
+                    this._copyToClipboard(url, btn, origText);
+                    // 显示局域网提示
+                    setTimeout(() => {
+                        btn.textContent = '📡 局域网链接已复制';
+                        setTimeout(() => { btn.textContent = origText; }, 3000);
+                    }, 2000);
+                    return;
+                }
+            } catch (e) {
+                console.warn('保存到服务器失败', e);
+            }
+        }
+
+        // 服务器未运行：引导用户启动
+        const guide = [
+            '📢 分享需要先启动本地服务器',
+            '',
+            '步骤：',
+            '1. 双击运行项目根目录下的 server.py',
+            '2. 服务器启动后会显示局域网地址（如 http://192.168.x.x:8000）',
+            '3. 保持 server.py 运行，同一 WiFi 下的设备即可访问',
+            '4. 再次点击「🔗 分享」按钮，自动复制阅读页链接',
+            '',
+            '提示：服务器运行期间，你的电脑需保持开机且连接同一 WiFi。',
+            '',
+            '是否现在尝试启动 server.py？（需要 Python 环境）'
+        ].join('\n');
+
+        if (confirm(guide)) {
+            // 尝试用默认程序打开 server.py（Windows 会调用 Python）
+            window.open('server.py', '_blank');
+            alert('如果浏览器下载了 server.py，请手动双击运行它。\n运行成功后，再次点击分享按钮即可。');
+        }
+    }
+
+    _copyToClipboard(text, btn, origText) {
+        const done = () => {
+            btn.textContent = '✅ 链接已复制';
+            setTimeout(() => { btn.textContent = origText; }, 2000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => {
+                this._fallbackCopy(text);
+                done();
+            });
+        } else {
+            this._fallbackCopy(text);
+            done();
+        }
+    }
+
+    _fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) { console.warn('复制失败', e); }
+        document.body.removeChild(ta);
+    }
+
+    // ===================== 工具方法 =====================
+
+    _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+}
+
+// ======================== 启动应用 ========================
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.app = new App();
+});

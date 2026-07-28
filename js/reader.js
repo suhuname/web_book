@@ -192,6 +192,7 @@ class ReaderApp {
             this.data = shareData;
         } else {
             // 等待异步章节加载完成
+            // 等待 NOVEL_DATA 就绪（data/novel.js 同步加载后设置 window.__NOVEL_DATA__）
             if (window.__NOVEL_READY__) {
                 await window.__NOVEL_READY__;
             }
@@ -200,6 +201,11 @@ class ReaderApp {
                 this.data = window.__NOVEL_DATA__;
             } else {
                 throw new Error('未找到小说数据');
+            }
+
+            // 如果章节缺少 content，从单独的章节文件异步加载
+            if (typeof this._loadChapterContents === 'function') {
+                await this._loadChapterContents();
             }
         }
 
@@ -214,6 +220,31 @@ class ReaderApp {
         const book = this.data.book || {};
         this.els.bookTitle.textContent = book.title ? '《' + book.title + '》' + (book.author ? ' · ' + book.author : '') : '';
         document.title = (book.title || '阅读') + ' - 阅读';
+    }
+
+    /**
+     * 异步加载章节正文内容
+     * 当 data/novel.js 中的 chapters 缺少 content 字段时，
+     * 从 data/chapters/ 目录下加载对应的章节 JSON 文件
+     */
+    async _loadChapterContents() {
+        const chapters = this.data.chapters;
+        const loadPromises = chapters.map(async (ch) => {
+            // 如果已有内容则跳过
+            if (ch.content) return;
+            try {
+                const resp = await fetch('data/chapters/' + ch.id + '.json');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (data && data.content) {
+                    ch.content = data.content;
+                }
+            } catch (e) {
+                // 静默失败，单个章节加载失败不影响其他章节
+                console.warn('章节内容加载失败: ' + ch.id, e);
+            }
+        });
+        await Promise.all(loadPromises);
     }
 
     _renderChapter() {

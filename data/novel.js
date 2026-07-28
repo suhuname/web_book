@@ -120,3 +120,6 @@ const NOVEL_DATA = {
         }
     ]
 };
+
+// 暴露到全局供阅读页使用
+window.__NOVEL_DATA__ = NOVEL_DATA;

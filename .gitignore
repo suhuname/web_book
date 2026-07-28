@@ -1,3 +1,10 @@
 .vercel
 __pycache__/
 temp/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example

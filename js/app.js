@@ -330,10 +330,27 @@ class App {
             btnExport: document.getElementById('btnExport'),
             btnRefresh: document.getElementById('btnRefresh'),
             btnShare: document.getElementById('btnShare'),
+            btnInsertImage: document.getElementById('btnInsertImage'),
             wordCount: document.getElementById('wordCount'),
             charCount: document.getElementById('charCount'),
             lineCount: document.getElementById('lineCount'),
             bookTitle: document.getElementById('bookTitleDisplay'),
+            // 图片插入
+            imageFileInput: document.getElementById('imageFileInput'),
+            imageModal: document.getElementById('imageModal'),
+            imageModalClose: document.getElementById('imageModalClose'),
+            imageCancel: document.getElementById('imageCancel'),
+            imageConfirm: document.getElementById('imageConfirm'),
+            imageUrlInput: document.getElementById('imageUrlInput'),
+            btnSelectImage: document.getElementById('btnSelectImage'),
+            btnRemoveImage: document.getElementById('btnRemoveImage'),
+            imagePreview: document.getElementById('imagePreview'),
+            imagePreviewBox: document.getElementById('imagePreviewBox'),
+            imageFileInfo: document.getElementById('imageFileInfo'),
+            imageUrlPreview: document.getElementById('imageUrlPreview'),
+            imageUrlPreviewBox: document.getElementById('imageUrlPreviewBox'),
+            imageTabUpload: document.getElementById('imageTabUpload'),
+            imageTabUrl: document.getElementById('imageTabUrl'),
             // 重命名弹窗
             renameModal: document.getElementById('renameModal'),
             renameInput: document.getElementById('renameInput'),
@@ -354,6 +371,9 @@ class App {
         this.currentMode = 'edit'; // 'edit' | 'preview'
         this.pendingRenameId = null;
         this.pendingDeleteId = null;
+        this.pendingImageData = null; // base64 图片数据
+        this.pendingImageName = '';   // 图片文件名
+        this.imageInsertMode = 'upload'; // 'upload' | 'url'
         this.saveTimer = null;
         this.initialized = false;
 
@@ -530,6 +550,74 @@ class App {
 
         // 新增章节
         this.els.btnAddChapter.addEventListener('click', () => this._addChapter());
+
+        // 图片插入按钮
+        if (this.els.btnInsertImage) {
+            this.els.btnInsertImage.addEventListener('click', () => this._openImageModal());
+        }
+
+        // 图片弹窗关闭
+        if (this.els.imageModalClose) {
+            this.els.imageModalClose.addEventListener('click', () => this._closeImageModal());
+        }
+        if (this.els.imageCancel) {
+            this.els.imageCancel.addEventListener('click', () => this._closeImageModal());
+        }
+        if (this.els.imageModal) {
+            this.els.imageModal.addEventListener('click', (e) => {
+                if (e.target === this.els.imageModal) this._closeImageModal();
+            });
+        }
+
+        // 图片确认插入
+        if (this.els.imageConfirm) {
+            this.els.imageConfirm.addEventListener('click', () => this._confirmInsertImage());
+        }
+
+        // 图片 URL 输入实时预览
+        if (this.els.imageUrlInput) {
+            this.els.imageUrlInput.addEventListener('input', () => this._previewImageUrl());
+            this.els.imageUrlInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this._confirmInsertImage();
+                if (e.key === 'Escape') this._closeImageModal();
+            });
+        }
+
+        // 图片文件选择
+        if (this.els.btnSelectImage) {
+            this.els.btnSelectImage.addEventListener('click', () => {
+                if (this.els.imageFileInput) this.els.imageFileInput.click();
+            });
+        }
+        if (this.els.imageFileInput) {
+            this.els.imageFileInput.addEventListener('change', (e) => this._handleFileSelect(e));
+        }
+
+        // 移除已选图片
+        if (this.els.btnRemoveImage) {
+            this.els.btnRemoveImage.addEventListener('click', () => this._clearImageFile());
+        }
+
+        // 图片弹窗标签切换
+        document.querySelectorAll('.image-tab').forEach(tab => {
+            tab.addEventListener('click', () => this._switchImageTab(tab.dataset.tab));
+        });
+
+        // 编辑器粘贴（支持粘贴图片）
+        this.els.editor.addEventListener('paste', (e) => this._handleImagePaste(e));
+
+        // 编辑器拖拽上传
+        this.els.editor.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.els.editor.style.outline = '2px dashed var(--accent)';
+        });
+        this.els.editor.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.els.editor.style.outline = 'none';
+        });
+        this.els.editor.addEventListener('drop', (e) => this._handleImageDrop(e));
 
         // 编辑器输入（自动保存 + 统计）
         this.els.editor.addEventListener('input', () => {
@@ -1222,6 +1310,305 @@ class App {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    // ===================== 图片插入 =====================
+
+    /**
+     * 打开图片插入弹窗
+     */
+    _openImageModal() {
+        this.pendingImageData = null;
+        this.pendingImageName = '';
+        this.imageInsertMode = 'upload';
+
+        // 重置状态
+        if (this.els.imageUrlInput) this.els.imageUrlInput.value = '';
+        if (this.els.imageFileInput) this.els.imageFileInput.value = '';
+        this._clearImageFile();
+        this._hideUrlPreview();
+
+        // 重置到上传标签
+        this._switchImageTab('upload');
+
+        if (this.els.imageModal) {
+            this.els.imageModal.style.display = 'flex';
+        }
+    }
+
+    /**
+     * 关闭图片插入弹窗
+     */
+    _closeImageModal() {
+        if (this.els.imageModal) {
+            this.els.imageModal.style.display = 'none';
+        }
+        this.pendingImageData = null;
+        this.pendingImageName = '';
+        if (this.els.editor) this.els.editor.focus();
+    }
+
+    /**
+     * 切换图片插入模式标签
+     * @param {string} mode - 'upload' | 'url'
+     */
+    _switchImageTab(mode) {
+        this.imageInsertMode = mode;
+
+        // 切换标签按钮状态
+        document.querySelectorAll('.image-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === mode);
+        });
+
+        // 切换内容面板
+        if (this.els.imageTabUpload) {
+            this.els.imageTabUpload.style.display = mode === 'upload' ? 'block' : 'none';
+        }
+        if (this.els.imageTabUrl) {
+            this.els.imageTabUrl.style.display = mode === 'url' ? 'block' : 'none';
+        }
+
+        // 聚焦到对应输入
+        if (mode === 'url' && this.els.imageUrlInput) {
+            setTimeout(() => this.els.imageUrlInput.focus(), 100);
+        }
+    }
+
+    /**
+     * 处理选择的图片文件
+     */
+    _handleFileSelect(e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        // 验证文件类型
+        if (!file.type.startsWith('image/')) {
+            alert('请选择图片文件（PNG、JPG、GIF、WebP）');
+            return;
+        }
+
+        // 验证文件大小（限制 10MB）
+        const maxSize = 10 * 1024 * 1024;
+        if (file.size > maxSize) {
+            alert(`图片文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选择小于 10MB 的图片`);
+            return;
+        }
+
+        this.pendingImageName = file.name;
+
+        // 读取文件为 base64
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            this.pendingImageData = ev.target.result;
+
+            // 显示预览
+            if (this.els.imagePreview) {
+                this.els.imagePreview.src = this.pendingImageData;
+            }
+            if (this.els.imagePreviewBox) {
+                this.els.imagePreviewBox.style.display = 'block';
+            }
+            if (this.els.imageFileInfo) {
+                const sizeStr = file.size > 1024 * 1024
+                    ? (file.size / 1024 / 1024).toFixed(1) + ' MB'
+                    : (file.size / 1024).toFixed(0) + ' KB';
+                this.els.imageFileInfo.textContent = `${file.name}（${sizeStr}）`;
+            }
+
+            // 自动切换到上传标签
+            if (this.imageInsertMode !== 'upload') {
+                this._switchImageTab('upload');
+            }
+        };
+        reader.onerror = () => {
+            alert('图片读取失败，请重试');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    /**
+     * 清除已选择的图片文件
+     */
+    _clearImageFile() {
+        this.pendingImageData = null;
+        this.pendingImageName = '';
+        if (this.els.imagePreview) this.els.imagePreview.src = '';
+        if (this.els.imagePreviewBox) this.els.imagePreviewBox.style.display = 'none';
+        if (this.els.imageFileInput) this.els.imageFileInput.value = '';
+    }
+
+    /**
+     * 预览 URL 图片
+     */
+    _previewImageUrl() {
+        const url = this.els.imageUrlInput.value.trim();
+        if (!url) {
+            this._hideUrlPreview();
+            return;
+        }
+
+        // 简单 URL 格式校验
+        if (!/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|svg|avif)(\?.*)?$/i.test(url) && !/^https?:\/\/.+/.test(url)) {
+            this._hideUrlPreview();
+            return;
+        }
+
+        if (this.els.imageUrlPreviewBox) {
+            this.els.imageUrlPreviewBox.style.display = 'block';
+            this.els.imageUrlPreviewBox.innerHTML = '<img src="' + this._escapeHtml(url) + '" alt="URL 预览" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\\\'url-preview-error\\\\\'>\\u26a0\\ufe0f \\u65e0\\u6cd5\\u52a0\\u8f7d\\u6b64\\u56fe\\u7247\\uff0c\\u8bf7\\u68c0\\u67e5\\u94fe\\u63a5\\u662f\\u5426\\u6b63\\u786e</div>\'">';
+        }
+    }
+
+    /**
+     * 隐藏 URL 预览
+     */
+    _hideUrlPreview() {
+        if (this.els.imageUrlPreviewBox) {
+            this.els.imageUrlPreviewBox.style.display = 'none';
+            this.els.imageUrlPreviewBox.innerHTML = '';
+        }
+    }
+
+    /**
+     * 确认插入图片
+     */
+    _confirmInsertImage() {
+        if (this.imageInsertMode === 'upload') {
+            // 上传模式：使用已读取的 base64 数据
+            if (!this.pendingImageData) {
+                alert('请先选择一张图片');
+                return;
+            }
+            this._insertImageToEditor(this.pendingImageData, this.pendingImageName);
+            this._closeImageModal();
+        } else {
+            // URL 模式
+            const url = this.els.imageUrlInput.value.trim();
+            if (!url) {
+                alert('请输入图片 URL');
+                return;
+            }
+            // 简单 URL 格式校验
+            if (!/^https?:\/\//i.test(url)) {
+                alert('请输入有效的图片 URL（以 http:// 或 https:// 开头）');
+                return;
+            }
+            this._insertImageToEditor(url, '');
+            this._closeImageModal();
+        }
+    }
+
+    /**
+     * 在编辑器光标位置插入图片 Markdown
+     * @param {string} src - 图片地址（URL 或 base64）
+     * @param {string} fileName - 文件名（用于描述）
+     */
+    _insertImageToEditor(src, fileName) {
+        const editor = this.els.editor;
+        if (!editor) return;
+
+        // 生成图片描述
+        const desc = fileName
+            ? fileName.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+            : '插图';
+
+        // 构造 Markdown 图片语法
+        const imageMarkdown = '\n![' + desc + '](' + src + ')\n';
+
+        // 在光标位置插入
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        const text = editor.value;
+        const before = text.substring(0, start);
+        const after = text.substring(end);
+
+        editor.value = before + imageMarkdown + after;
+
+        // 移动光标到插入内容之后
+        const newPos = start + imageMarkdown.length;
+        editor.selectionStart = newPos;
+        editor.selectionEnd = newPos;
+        editor.focus();
+
+        // 触发 input 事件以保存和统计
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    /**
+     * 处理剪贴板粘贴事件（支持粘贴图片）
+     */
+    _handleImagePaste(e) {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+
+        let imageFile = null;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                imageFile = item.getAsFile();
+                break;
+            }
+        }
+
+        if (!imageFile) return;
+
+        // 阻止默认粘贴行为（防止粘贴图片的二进制内容）
+        e.preventDefault();
+
+        // 验证文件大小
+        const maxSize = 10 * 1024 * 1024;
+        if (imageFile.size > maxSize) {
+            alert(`图片过大（${(imageFile.size / 1024 / 1024).toFixed(1)}MB），请使用小于 10MB 的图片`);
+            return;
+        }
+
+        // 读取并插入
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            this._insertImageToEditor(ev.target.result, '粘贴的图片');
+        };
+        reader.readAsDataURL(imageFile);
+    }
+
+    /**
+     * 处理拖拽放置事件（支持拖拽图片）
+     */
+    _handleImageDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // 移除拖拽高亮
+        this.els.editor.style.outline = 'none';
+
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || files.length === 0) {
+            return;
+        }
+
+        let imageFile = null;
+        for (const file of files) {
+            if (file.type.startsWith('image/')) {
+                imageFile = file;
+                break;
+            }
+        }
+
+        if (!imageFile) {
+            return;
+        }
+
+        // 验证文件大小
+        const maxSize = 10 * 1024 * 1024;
+        if (imageFile.size > maxSize) {
+            alert(`图片过大（${(imageFile.size / 1024 / 1024).toFixed(1)}MB），请使用小于 10MB 的图片`);
+            return;
+        }
+
+        // 读取并插入
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            this._insertImageToEditor(ev.target.result, imageFile.name);
+        };
+        reader.readAsDataURL(imageFile);
     }
 }
 

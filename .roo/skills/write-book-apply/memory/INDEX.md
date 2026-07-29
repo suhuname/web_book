@@ -16,5 +16,6 @@
 | exp-20260727-007 | server.py _load_novel 改为优先读取章节 JSON 文件 | `bugfix` `server` `api` `cache` | `server.py` | 修复 _load_novel 只读 content 不读 title/summary 的问题；添加 Cache-Control: no-store 防止浏览器缓存 |
 | exp-20260727-008 | 初始加载优先使用 /api/novel 接口读取最新数据 | `bugfix` `api` `cache` `data-source` `js/app.js` | `js/app.js` `server.py` `data/novel.js` | 修复 `_loadNovelData()` 走 `__NOVEL_READY__` 而非 `/api/novel` 接口，导致初始加载显示陈旧数据需手动点击刷新才能获取最新内容的问题 |
 | 2026-07-27-009 | 添加快捷到顶部/到底部按钮 | `feature` `ui` `navigation` `scroll` | `css/style.css` `index.html` `reader.html` | 编辑页和阅读页新增浮动 ↑↓ 按钮组。编辑页因 html/body 有 overflow:hidden，改用内部元素（textarea/preview-panel）滚动；阅读页直接用 window.scrollTo |
+| 2026-07-29-010 | 文本中插入图片功能 | `feature` `image` `upload` `markdown` `editor` | `index.html` `js/app.js` `css/style.css` | 新增完整的图片插入功能：工具栏按钮、上传本地图片转 base64、URL 链接输入、剪贴板粘贴图片、拖拽图片到编辑器。复用现有 Markdown 渲染器 |
 
 <!-- 新增记忆后，同步更新此表 -->

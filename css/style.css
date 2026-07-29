@@ -282,6 +282,21 @@ body {
     transform: scale(0.96);
 }
 
+.btn-image {
+    background: #8e44ad;
+    color: #fff;
+}
+
+.btn-image:hover {
+    background: #a569bd;
+    box-shadow: 0 2px 10px rgba(142, 68, 173, 0.4);
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
 .btn-danger {
     background: #c0392b;
     color: #fff;
@@ -620,8 +635,16 @@ body {
 
 .preview-content img {
     max-width: 100%;
+    height: auto;
     border-radius: var(--radius-sm);
     margin: 14px 0;
+    display: block;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease;
+}
+
+.preview-content img:hover {
+    transform: scale(1.01);
 }
 
 .preview-content table {
@@ -644,6 +667,104 @@ body {
 
 .preview-content tr:nth-child(even) {
     background: rgba(255, 255, 255, 0.02);
+}
+
+/* ========== Image Modal Tabs ========== */
+.image-modal-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    padding: 3px;
+    border: 1px solid var(--border-color);
+}
+
+.image-tab {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: var(--transition);
+    font-weight: 500;
+}
+
+.image-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.image-tab.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.image-tab-content {
+    min-height: 120px;
+}
+
+.image-tab-desc {
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.image-tab-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+.image-preview-box {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.image-preview-box img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
+.image-file-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    word-break: break-all;
+}
+
+.image-url-preview-box {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.image-url-preview-box img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
+.image-url-preview-box .url-preview-error {
+    color: var(--accent);
+    font-size: 13px;
+    padding: 20px;
 }
 
 /* ========== Modal ========== */

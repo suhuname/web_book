@@ -331,6 +331,7 @@ class App {
             btnRefresh: document.getElementById('btnRefresh'),
             btnShare: document.getElementById('btnShare'),
             btnInsertImage: document.getElementById('btnInsertImage'),
+            btnRemoveImages: document.getElementById('btnRemoveImages'),
             wordCount: document.getElementById('wordCount'),
             charCount: document.getElementById('charCount'),
             lineCount: document.getElementById('lineCount'),
@@ -535,6 +536,15 @@ class App {
             this.els.btnShare.addEventListener('click', () => {
                 if (this.data) {
                     this._shareBook();
+                }
+            });
+        }
+
+        // 删除当前章节所有图片按钮
+        if (this.els.btnRemoveImages) {
+            this.els.btnRemoveImages.addEventListener('click', () => {
+                if (this.data) {
+                    this._removeAllImagesFromChapter();
                 }
             });
         }
@@ -1572,6 +1582,54 @@ class App {
     /**
      * 处理拖拽放置事件（支持拖拽图片）
      */
+    /**
+     * 一键删除当前章节中所有 Markdown 图片语法
+     */
+    _removeAllImagesFromChapter() {
+        const ch = this._getActiveChapter();
+        if (!ch) return;
+
+        // 统计当前章节中的图片数量
+        const imageMatches = ch.content.match(/!\[([^\]]*)\]\(([^)]+)\)/g);
+        const count = imageMatches ? imageMatches.length : 0;
+
+        if (count === 0) {
+            alert('当前章节中没有图片');
+            return;
+        }
+
+        if (!confirm(`确定要删除当前章节中的 ${count} 张图片吗？\n此操作不可撤销。`)) {
+            return;
+        }
+
+        // 移除所有 Markdown 图片语法（包括前后可能存在的空白行）
+        let newContent = ch.content.replace(/\n*!\[([^\]]*)\]\(([^)]+)\)\n*/g, '\n');
+        // 清理多余的连续空行
+        newContent = newContent.replace(/\n{3,}/g, '\n\n');
+        // 去除首尾空白
+        newContent = newContent.trim();
+
+        ch.content = newContent;
+        this.els.editor.value = newContent;
+
+        // 保存并更新
+        this._saveData();
+        this._updateStats();
+
+        // 如果在预览模式，刷新预览
+        if (this.currentMode === 'preview') {
+            this._renderPreview();
+        }
+
+        // 显示成功提示
+        const btn = this.els.btnRemoveImages;
+        const originalText = btn.textContent;
+        btn.textContent = `✅ 已删除 ${count} 张`;
+        setTimeout(() => {
+            btn.textContent = originalText;
+        }, 2000);
+    }
+
     _handleImageDrop(e) {
         e.preventDefault();
         e.stopPropagation();

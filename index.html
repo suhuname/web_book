@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>写书工具 - 小说编辑</title>
-    <link rel="stylesheet" href="css/style.css?v=20260729-1">
+    <link rel="stylesheet" href="css/style.css?v=20260731-1">
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -23,6 +23,7 @@
             <button class="btn btn-primary" id="btnAddChapter">➕ 新增章节</button>
             <button class="btn btn-save" id="btnSaveToFile">💾 保存到文件</button>
             <button class="btn btn-image" id="btnInsertImage">🖼️ 图片</button>
+            <button class="btn btn-remove-images" id="btnRemoveImages">🗑️ 删图</button>
             <button class="btn btn-secondary" id="btnExport">📥 导出</button>
             <button class="btn btn-refresh" id="btnRefresh">🔄 刷新</button>
             <div class="theme-switch">
@@ -151,7 +152,7 @@
     <button class="back-to-bottom" id="backToBottom" title="跳到底部">↓</button>
 
     <script src="data/novel.js?v=20260726-2"></script>
-    <script src="js/app.js?v=20260729-1"></script>
+    <script src="js/app.js?v=20260731-1"></script>
     <script>
         // 获取当前可见的可滚动容器（编辑模式→textarea，预览模式→preview-panel）
         function _getScrollBox() {

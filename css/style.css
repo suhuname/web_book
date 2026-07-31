@@ -292,6 +292,16 @@ body {
     box-shadow: 0 2px 10px rgba(142, 68, 173, 0.4);
 }
 
+.btn-remove-images {
+    background: #c0392b;
+    color: #fff;
+}
+
+.btn-remove-images:hover {
+    background: #e74c3c;
+    box-shadow: 0 2px 10px rgba(192, 57, 43, 0.4);
+}
+
 .btn-sm {
     padding: 4px 10px;
     font-size: 12px;

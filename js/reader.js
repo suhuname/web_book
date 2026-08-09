@@ -5,10 +5,10 @@
 
 // ======================== 主题管理 ========================
 
-const THEME_KEY = 'write_book_theme';
+const { THEME_KEY } = window.APP_CONFIG;
 
 function initTheme() {
-    const saved = localStorage.getItem(THEME_KEY) || 'green';
+    const saved = localStorage.getItem(THEME_KEY) || 'paper';
     applyTheme(saved);
     document.querySelectorAll('.theme-btn').forEach(btn => {
         btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
@@ -16,7 +16,7 @@ function initTheme() {
 }
 
 function applyTheme(theme) {
-    if (!['dark', 'green', 'paper'].includes(theme)) theme = 'green';
+    if (!['dark', 'green', 'paper'].includes(theme)) theme = 'paper';
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem(THEME_KEY, theme);
     document.querySelectorAll('.theme-btn').forEach(btn => {
@@ -24,106 +24,9 @@ function applyTheme(theme) {
     });
 }
 
-// ======================== Markdown 渲染器（简化版） ========================
+// ======================== Markdown 渲染器（共享，见 js/markdown.js） ========================
 
-class MarkdownRenderer {
-    static render(text) {
-        if (!text || !text.trim()) {
-            return '<div class="empty">✨ 本章节暂无内容</div>';
-        }
-        const codeBlocks = [];
-        let processed = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
-            const i = codeBlocks.length;
-            const esc = code.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-            codeBlocks.push('<pre><code>' + esc + '</code></pre>');
-            return '\x00CB' + i + '\x00';
-        });
-        processed = processed.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-        const lines = processed.split('\n');
-        const blocks = [];
-        let i = 0;
-        while (i < lines.length) {
-            const line = lines[i];
-            const t = line.trim();
-            if (!t) { i++; continue; }
-            const cbm = t.match(/^\x00CB(\d+)\x00$/);
-            if (cbm) { blocks.push(codeBlocks[parseInt(cbm[1])]); i++; continue; }
-            const hm = t.match(/^(#{1,6})\s+(.+)$/);
-            if (hm) {
-                const lv = hm[1].length;
-                blocks.push('<h' + lv + '>' + this._inline(hm[2]) + '</h' + lv + '>');
-                i++; continue;
-            }
-            if (/^---+\s*$/.test(t) || /^\*\*\*+\s*$/.test(t)) { blocks.push('<hr>'); i++; continue; }
-            if (t.startsWith('>')) {
-                const ql = [];
-                while (i < lines.length && lines[i].trim().startsWith('>')) {
-                    ql.push(lines[i].trim().replace(/^>\s?/, '')); i++;
-                }
-                const qc = ql.map(l => '<p>' + this._inline(l) + '</p>').join('');
-                blocks.push('<blockquote>' + qc + '</blockquote>'); continue;
-            }
-            if (/^[\*\-]\s/.test(t)) {
-                const items = [];
-                while (i < lines.length) {
-                    const tt = lines[i].trim();
-                    if (/^[\*\-]\s/.test(tt)) { items.push(this._inline(tt.replace(/^[\*\-]\s+/, ''))); i++; }
-                    else if (tt === '') { i++; if (i < lines.length && /^[\*\-]\s/.test(lines[i].trim())) continue; break; }
-                    else break;
-                }
-                blocks.push('<ul>' + items.map(x => '<li>' + x + '</li>').join('') + '</ul>'); continue;
-            }
-            if (/^\d+\.\s/.test(t)) {
-                const items = [];
-                while (i < lines.length) {
-                    const tt = lines[i].trim();
-                    const om = tt.match(/^\d+\.\s+(.+)$/);
-                    if (om) { items.push(this._inline(om[1])); i++; }
-                    else if (tt === '') { i++; if (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) continue; break; }
-                    else break;
-                }
-                blocks.push('<ol>' + items.map(x => '<li>' + x + '</li>').join('') + '</ol>'); continue;
-            }
-            if (t.startsWith('|') && t.endsWith('|')) {
-                const rows = []; let isH = true;
-                while (i < lines.length) {
-                    const tt = lines[i].trim();
-                    if (!tt.startsWith('|') || !tt.endsWith('|')) break;
-                    const cells = tt.split('|').filter(c => c.trim());
-                    if (cells.every(c => /^[\s\-:]+$/.test(c.trim()))) { isH = false; i++; continue; }
-                    const tag = isH ? 'th' : 'td';
-                    rows.push('<tr>' + cells.map(c => '<' + tag + '>' + this._inline(c.trim()) + '</' + tag + '>').join('') + '</tr>');
-                    if (isH) isH = false; i++;
-                }
-                if (rows.length) blocks.push('<table>' + rows.join('') + '</table>'); continue;
-            }
-            const pl = [t]; i++;
-            while (i < lines.length) {
-                const nt = lines[i].trim();
-                if (!nt || /^(#|>|\d+\.\s|[\*\-]\s|\||---)/.test(nt) || /^\x00CB/.test(nt)) break;
-                pl.push(nt); i++;
-            }
-            blocks.push('<p>' + pl.map(l => this._inline(l)).join('<br>') + '</p>');
-        }
-        return blocks.join('\n');
-    }
-
-    static _inline(text) {
-        if (!text) return '';
-        let r = text;
-        r = r.replace(/`([^`]+)`/g, '<code>$1</code>');
-        r = r.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">');
-        r = r.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-        r = r.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-        r = r.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
-        r = r.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        r = r.replace(/__(.+?)__/g, '<strong>$1</strong>');
-        r = r.replace(/\*(.+?)\*/g, '<em>$1</em>');
-        r = r.replace(/_(.+?)_/g, '<em>$1</em>');
-        r = r.replace(/~~(.+?)~~/g, '<del>$1</del>');
-        return r;
-    }
-}
+const MarkdownRenderer = window.MarkdownRenderer;
 
 // ======================== 数据解码 ========================
 
@@ -255,7 +158,7 @@ class ReaderApp {
             return;
         }
         this.els.chapterTitle.textContent = ch.title;
-        this.els.content.innerHTML = MarkdownRenderer.render(ch.content || '');
+        this.els.content.innerHTML = MarkdownRenderer.render(ch.content || '', '<div class="empty">✨ 本章节暂无内容</div>');
         document.title = ch.title + ' - ' + ((this.data.book && this.data.book.title) || '阅读');
 
         // 翻页按钮

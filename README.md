@@ -57,12 +57,16 @@ publish.bat
 ```
 web_book/
 ├── server.py              # 本地服务器（静态 + API + novel.js 生成）
-├── publish.bat            # Vercel 一键发布脚本
+├── config.py              # 后端配置（端口 / 防火墙规则名）
+├── publish.bat            # Vercel 一键发布脚本（含版本号 + 契约校验）
 ├── vercel.json            # Vercel 路由/缓存配置（/read → reader.html）
 ├── _redirects             # 根路径重定向到阅读页
+├── TOOL_CONTRACT.md       # API 契约（前后端唯一权威）
 ├── index.html             # 写作端（编辑器）
 ├── reader.html            # 阅读端
 ├── js/
+│   ├── config.js          # 前端共享配置（存储 key / API 端点）
+│   ├── markdown.js        # 共享 Markdown 渲染器（写作/阅读双端复用）
 │   ├── app.js             # 编辑器逻辑（localStorage + 保存/导出）
 │   └── reader.js          # 阅读器逻辑（目录/章节加载）
 ├── css/style.css          # 样式
@@ -72,6 +76,7 @@ web_book/
 │   ├── outline.md         # 小说大纲（人物/剧情规划）
 │   └── chapters/
 │       └── ch_*.json      # 各章节正文（Markdown 内容）
+├── scripts/               # 契约校验 / 版本号脚本
 ├── tools/                 # 辅助脚本
 └── .obsidian/             # Obsidian 仓库配置（可用 Obsidian 直接编辑大纲）
 ```
@@ -95,6 +100,13 @@ web_book/
 - **保存降级链**：服务器 API 不可用时，编辑器自动降级为「下载 JSON 文件」，配合 `localStorage` 自动备份
 - **防缓存**：本地服务器所有响应 `Cache-Control: no-store`，每次刷新都是最新内容
 - **Vercel 静态化**：纯前端可部署，`data/novel.js` 内联数据加载器让静态托管也能读章节
+
+### 工程化（对齐 Reasonix 设计模式）
+
+- **共享渲染器**（§5/§6）：Markdown 渲染收敛到 [`js/markdown.js`](js/markdown.js)（`window.MarkdownRenderer`），写作端/阅读端复用，一处修双端生效
+- **配置驱动**（§4）：后端端口/规则名收敛到 [`config.py`](config.py)，前端存储 key/API 收敛到 [`js/config.js`](js/config.js)，消除散落硬编码
+- **API 契约**（§3）：前后端路由唯一权威见 [`TOOL_CONTRACT.md`](TOOL_CONTRACT.md)；`node scripts/contract-check.mjs` 自动校验前后端一致
+- **版本号自动化**（§1）：`node scripts/bump-version.mjs` 部署前自动打时间戳版本号，[`publish.bat`](publish.bat) 已接入
 
 ## 常见问题
 

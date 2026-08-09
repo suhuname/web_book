@@ -28,6 +28,22 @@ if errorlevel 1 (
     )
 )
 
+REM 更新前端静态资源版本号（§1 缓存版本号自动化）
+node scripts/bump-version.mjs
+if errorlevel 1 (
+    echo [错误] 版本号更新失败
+    pause
+    exit /b 1
+)
+
+REM 校验前后端 API 契约（§3 工具契约文档化）
+node scripts/contract-check.mjs
+if errorlevel 1 (
+    echo [错误] API 契约不一致，请查看 TOOL_CONTRACT.md
+    pause
+    exit /b 1
+)
+
 echo [1/2] 正在部署到 Vercel 生产环境...
 echo.
 

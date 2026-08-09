@@ -17,9 +17,8 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-BASE_DIR = Path(__file__).parent.resolve()
-DATA_FILE = BASE_DIR / "data" / "novel.json"
-PORT = 8000
+# 从统一配置读取（§4 配置驱动零硬编码）
+from config import BASE_DIR, DATA_FILE, PORT, FIREWALL_RULE_NAME
 
 
 def get_lan_ip():
@@ -398,7 +397,7 @@ def ensure_firewall_rule():
     if platform.system() != "Windows":
         return
 
-    rule_name = "星落之城"
+    rule_name = FIREWALL_RULE_NAME
     # 先检查规则是否已存在
     rc, out = _run_cmd_gbk(
         ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"]

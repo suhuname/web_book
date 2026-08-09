@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+<!-- impeccable-disable broken-image -- image previews are JS-filled placeholders inside display:none containers -->
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>写书工具 - 小说编辑</title>
-    <link rel="stylesheet" href="css/style.css?v=20260731-1">
+    <link rel="stylesheet" href="css/style.css?v=20260810-0114">
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -20,16 +21,16 @@
             </div>
         </div>
         <div class="toolbar-right">
-            <button class="btn btn-primary" id="btnAddChapter">➕ 新增章节</button>
-            <button class="btn btn-save" id="btnSaveToFile">💾 保存到文件</button>
-            <button class="btn btn-image" id="btnInsertImage">🖼️ 图片</button>
-            <button class="btn btn-remove-images" id="btnRemoveImages">🗑️ 删图</button>
-            <button class="btn btn-secondary" id="btnExport">📥 导出</button>
-            <button class="btn btn-refresh" id="btnRefresh">🔄 刷新</button>
+            <button class="btn btn-primary" id="btnAddChapter">➕ <span class="btn-label">新增章节</span></button>
+            <button class="btn btn-save" id="btnSaveToFile">💾 <span class="btn-label">保存</span></button>
+            <button class="btn btn-image" id="btnInsertImage">🖼️ <span class="btn-label">图片</span></button>
+            <button class="btn btn-remove-images" id="btnRemoveImages">🗑️ <span class="btn-label">删图</span></button>
+            <button class="btn btn-secondary" id="btnExport">📥 <span class="btn-label">导出</span></button>
+            <button class="btn btn-refresh" id="btnRefresh">🔄 <span class="btn-label">刷新</span></button>
             <div class="theme-switch">
-                <button class="theme-btn active" data-theme="green" title="护眼绿主题">🌿</button>
+                <button class="theme-btn active" data-theme="paper" title="暖纸主题">📄</button>
+                <button class="theme-btn" data-theme="green" title="护眼绿主题">🌿</button>
                 <button class="theme-btn" data-theme="dark" title="暗夜主题">🌙</button>
-                <button class="theme-btn" data-theme="paper" title="纸墨主题">📄</button>
             </div>
         </div>
     </header>
@@ -92,7 +93,7 @@
                     <p class="image-tab-desc">选择本地图片文件（支持 PNG、JPG、GIF、WebP）</p>
                     <button class="btn btn-primary" id="btnSelectImage">📂 选择图片文件</button>
                     <div class="image-preview-box" id="imagePreviewBox" style="display:none;">
-                        <img id="imagePreview" alt="图片预览">
+                        <img id="imagePreview" alt="图片预览" src="" data-placeholder="1">
                         <p class="image-file-info" id="imageFileInfo"></p>
                         <button class="btn btn-secondary btn-sm" id="btnRemoveImage">✕ 移除</button>
                     </div>
@@ -102,7 +103,7 @@
                     <input type="text" id="imageUrlInput" class="modal-input" placeholder="https://example.com/image.jpg">
                     <p class="image-tab-hint">支持 jpg、png、gif、webp 格式的图片链接</p>
                     <div class="image-url-preview-box" id="imageUrlPreviewBox" style="display:none;">
-                        <img id="imageUrlPreview" alt="URL 预览">
+                        <img id="imageUrlPreview" alt="URL 预览" src="" data-placeholder="1">
                     </div>
                 </div>
             </div>
@@ -151,8 +152,10 @@
     <button class="back-to-top" id="backToTop" title="回到顶部">↑</button>
     <button class="back-to-bottom" id="backToBottom" title="跳到底部">↓</button>
 
-    <script src="data/novel.js?v=20260726-2"></script>
-    <script src="js/app.js?v=20260731-1"></script>
+    <script src="data/novel.js?v=20260810-0114"></script>
+    <script src="js/config.js?v=20260810-0114"></script>
+    <script src="js/markdown.js?v=20260810-0114"></script>
+    <script src="js/app.js?v=20260810-0114"></script>
     <script>
         // 获取当前可见的可滚动容器（编辑模式→textarea，预览模式→preview-panel）
         function _getScrollBox() {

@@ -312,7 +312,7 @@ function main() {
                         const subtitle = parseSubtitle(newTitle);
                         newLines.push('');
                         newLines.push(`${prefix}第${num2cn(newNum)}章：${subtitle || '（新章节）'}`);
-                        newLines.push('> **字数目标：2000-3000 字**');
+                        newLines.push('> **字数目标：1200 字以上**');
                         newLines.push('');
                         newLines.push('> *（请在此补充新章节的剧情描述）*');
                         newLines.push('');
@@ -366,7 +366,7 @@ function main() {
                 // 没有找到匹配的章节标题，在文件末尾追加
                 newLines.push('');
                 newLines.push(`#### 第${num2cn(newNum)}章：${newSubtitle || '（新章节）'}`);
-                newLines.push('> **字数目标：2000-3000 字**');
+                newLines.push('> **字数目标：1200 字以上**');
                 newLines.push('');
                 newLines.push('> *（请在此补充新章节的剧情描述）*');
             }
